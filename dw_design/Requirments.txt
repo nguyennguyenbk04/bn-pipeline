@@ -1,0 +1,62 @@
+1. Understand performance across sellers, products, and product categories
+    Goal: Identify which sellers perform well and what products sell well. (SellerID, Products of that Seller) -> Fact sales
+
+2. Top 20 best-selling products
+    Analyze by seasonal trends (daily/monthly/quarterly) using the DateTime field.
+    Show ProductID / ProductName.
+
+3. Top 10 sellers + their performance (by revenue or what???)
+    Compare seller performance by:
+        Products sold (ProductID)
+        Product categories (Category) 
+
+4. Track revenue and orders 
+    Revenue = Quantity * CurrentPrice (only orders that have payment)
+    Orders = count of OrderID or OrderItemID
+    Breakdown by seller (SellerID)
+
+5. Analyze fast-growing and declining product categories (OrderID)
+    Based on OrderID over time.
+    Goal: Identify which categories to invest in and which to phase out.
+
+A. Top Seller
+    High revenue (Top 5–10% industry-wide): Quantity * CurrentPrice
+    Steady order growth (track OrderID over time)
+    Return rate < 1.5% (Orders with OrderStatus = Returned / Cancelled vs delivered)
+
+B. Premium Seller
+    Medium to high revenue, growing slower
+    Return rate between 1.5% and 3%
+
+C. Risk Seller
+    Low, unstable revenue
+    Declining order volume
+    Return rate > 3%
+
+#############################################################################
+Understand customer behavior & personalize experience
+    Goal: Serve the right customers in the right way at the right time.
+
+Key Analysis:
+    Identify loyal customers to offer personalized promotions (e.g., exclusive vouchers, free shipping).
+    Find customers who:
+        Place many orders (CustomerID with many OrderID)
+        Have high spending (Quantity * CurrentPrice)
+        Order frequently (returning buyers)
+
+Retention metric:
+    Repeat customers vs one-time customers → Use for retention strategy.
+##############################################################################
+
+##########################################################
+❌ Track return and cancellation rates (OrderStatus)
+    Goal: Assess seller quality and improve user experience.
+    Return rate = Number of returned orders (OrderStatus = Returned) / Total successful deliveries (OrderStatus = Delivered)
+    Cancellation rate = Number of canceled orders / Total placed orders
+
+Breakdown cancellation/return causes:
+    Track cancellations due to out of stock → assess supply quality.
+    Track returns caused by “buyer refused without reason” (i.e., fake orders or "bombing").
+🧩 Seller segmentation analysis
+    Goal: Classify sellers into 3 main segments to help the platform optimize operations and drive growth.
+###########################################################

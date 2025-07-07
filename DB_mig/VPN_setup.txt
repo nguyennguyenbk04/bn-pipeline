@@ -1,0 +1,89 @@
+# Create public IP for VPN
+az network public-ip create \
+  --name vpnGatewayPublicIP \
+  --resource-group mysql-migration-rg \
+  --sku Standard
+
+# Create gateway subnet for VPN 
+az network vnet subnet create \
+  --resource-group mysql-migration-rg \
+  --vnet-name mysqlMigrationVNet \
+  --name GatewaySubnet \
+  --address-prefix 10.0.255.0/27
+
+# Create VPN gateway
+az network vnet-gateway create \
+  --name mysqlMigrationVpnGateway \
+  --public-ip-address vpnGatewayPublicIP \
+  --resource-group mysql-migration-rg \
+  --vnet mysqlMigrationVNet \
+  --gateway-type Vpn \
+  --vpn-type RouteBased \
+  --sku VpnGw1 \
+  --no-wait
+######################################
+
+
+
+Hi @Alex M,
+
+Welcome to Microsoft Q&A Platform. Thank you for reaching out & hope you are doing well.
+
+Please follow the below steps to create a self-signed certificate for Point to Site VPN configuration in windows environment:
+
+    Before creating certificates, open PowerShell as an administrator and check the "ExecutionPolicy" by running the command: Get-ExecutionPolicy. It should be RemoteSigned. If it is not in RemoteSigned, change it to RemoteSigned by running command: Set-ExecutionPolicy -ExecutionPolicy use tab to get a RemoteSigned.
+    Create a self-signed root certificate: After setting the ExecutionPolicy to RemoteSigned, use the below script to generate a root certificate: (Open PowerShell run as an administrator, copy paste the below script). $params = @{ Type = 'Custom' Subject = 'CN=P2SRootCert' KeySpec = 'Signature' KeyExportPolicy = 'Exportable' KeyUsage = 'CertSign' KeyUsageProperty = 'Sign' KeyLength = 2048 HashAlgorithm = 'sha256' NotAfter = (Get-Date).AddMonths(24) CertStoreLocation = 'Cert:\CurrentUser\My' } $cert = New-SelfSignedCertificate @params
+    Generate a client certificate: Next copy & paste the below script to generate a Child certificate in the same PowerShell console session: $params = @{ Type = 'Custom' Subject = 'CN=P2SChildCert' DnsName = 'P2SChildCert' KeySpec = 'Signature' KeyExportPolicy = 'Exportable' KeyLength = 2048 HashAlgorithm = 'sha256' NotAfter = (Get-Date).AddMonths(18) CertStoreLocation = 'Cert:\CurrentUser\My' Signer = $cert TextExtension = @( '2.5.29.37={text}1.3.6.1.5.5.7.3.2') } New-SelfSignedCertificate @params
+    After generating Root & Child certificates, go to Manage user certificates > Personal > Certificates, you will find your latest generated root & child certificates (You can find it based on date).
+    Right click on the root certificate > All Tasks > Export > you can click on next button and please select "Base-64 encoded" format (It is optimized for Point to Site configuration) > you need to browse a path (Ex: C Drive) to save the exported root certificate, give a name to the file and save it and then click on finish.
+    Go to the location where you saved the exported root file, open it with a notepad or text and copy the code expect begin and end certificate.
+    Go to your VPN > Point to Site configuration > Maintain "Address pool, Tunnel type (Ex: IKEv2 and SSTP SSL, it supports both IKEv2 & SSTP) & Authentication type (Azure certificate)" > give the name of the root certificate and paste the copied code in public certification data and save it.
+    Download the VPN client and connect to the VPN.
+
+For your reference: https://learn.microsoft.com/en-us/azure/vpn-gateway/vpn-gateway-certificates-point-to-site
+
+Please follow the below steps to create a self-signed certificate for Point to Site VPN configuration in Linux environment:
+
+To generate self-signed certificate, please use openssl
+
+    Generate a Self-Signed Root Certificate: openssl genrsa -out caKey.pem 2048 openssl req -x509 -new -nodes -key caKey.pem -subj "/CN=VPN CA" -days 3650 -out caCert.pem
+    Print the self-signed root certificate public data in base64 format for point to site configuration: openssl x509 -in caCert.pem -outform der | base64 -w0 && echo
+    Generate a Client Certificate: export PASSWORD="password" export USERNAME=$(hostnamectl --static) # Generate a private key openssl genrsa -out "${USERNAME}Key.pem" 2048 # Generate a CSR (Certificate Sign Request) openssl req -new -key "${USERNAME}Key.pem" -out "${USERNAME}Req.pem" -subj "/CN=${USERNAME}" # Sign the CSR using the CA certificate and CA key openssl x509 -req -days 365 -in "${USERNAME}Req.pem" -CA caCert.pem -CAkey caKey.pem -CAcreateserial -out "${USERNAME}Cert.pem" -extfile <(echo -e "subjectAltName=DNS:${USERNAME}\nextendedKeyUsage=clientAuth")
+    Verify the Client Certificate: openssl verify -CAfile caCert.pem caCert.pem "${USERNAME}Cert.pem"
+    Export the root certificate and make sure you need to select the Base-64 Encoded option while exporting the root certificate.
+    open the certificate with notepad and copy the code by excluding the begin & end certificate
+    Go to Point to Site Configuration and past the root certificate data in public key section
+    Please maintain the address pool, tunnel type and authentication properly and save it.
+
+For your reference: https://learn.microsoft.com/en-us/azure/vpn-gateway/point-to-site-certificates-linux-openssl
+
+You can also Generate and export certificates by using Linux (strongSwan). Please find the below document for Additional reference: https://learn.microsoft.com/en-us/azure/vpn-gateway/vpn-gateway-certificates-point-to-site-linux
+
+If it was helpful, please click "Upvote and Accept Answer" on this post to let us know.
+
+If you need any further assistance, please don't hesitate to reach out to us. We are happy to assist you.
+
+Thank You.
+
+#######################################################
+# Unzip, cd to config file from azure
+unzip ~/Downloads/mysqlMigrationVpnGateway.zip -d ~/azurevpn
+cd ~/azurevpn/OpenVPN
+
+# run config
+sudo openvpn --config vpnconfig.ovpn
+
+# See list of operating VPNs
+systemctl list-units | grep openvpn
+
+# Check vpn status
+systemctl status openvpn.service
+
+# Disable VPN
+sudo systemctl stop openvpn-client@<your_vpnconfig_name>.service # or
+sudo systemctl stop openvpn.service # or
+sudo pkill openvpn
+
+
+# Check if connected (other way): find for tun0, check ip whether match address pool
+ifconfig

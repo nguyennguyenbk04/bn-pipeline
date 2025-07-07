@@ -1,0 +1,162 @@
+CREATE DATABASE IF NOT EXISTS online_store;
+
+use online_store;
+
+CREATE TABLE Sellers (
+    SellerID INT PRIMARY KEY,
+    Name VARCHAR(100),
+    Email VARCHAR(100),
+    PhoneNumber VARCHAR(20),
+    CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UpdatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE Customers (
+    CustomerID INT PRIMARY KEY, 
+    Name VARCHAR(100),
+    Email VARCHAR(100),
+    PhoneNumber VARCHAR(20),
+    CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UpdatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE ProductCategories (
+    CategoryID INT PRIMARY KEY,
+    CategoryName VARCHAR(50) NOT NULL,
+    CategoryDescription TEXT,
+    CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UpdatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE Products (
+    ProductID INT PRIMARY KEY,
+    Name VARCHAR(100),
+    Description TEXT,
+    Price DECIMAL,
+    CategoryID INT, -- Links to ProductCategories table
+    SellerID INT,
+    CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UpdatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (CategoryID) REFERENCES ProductCategories(CategoryID),
+    FOREIGN KEY (SellerID) REFERENCES Sellers(SellerID)
+);
+
+
+CREATE TABLE OrderStatus (
+    StatusID INT PRIMARY KEY,
+    StatusName VARCHAR(50) NOT NULL,
+    StatusDescription TEXT,
+    CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UpdatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE Orders (
+    OrderID INT PRIMARY KEY,
+    OrderNumber VARCHAR(50),
+    TotalAmount DECIMAL,
+    StatusID INT DEFAULT 1, -- Links to OrderStatus table
+    CustomerID INT,
+    CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UpdatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (CustomerID) REFERENCES Customers(CustomerID),
+    FOREIGN KEY (StatusID) REFERENCES OrderStatus(StatusID)
+);
+
+CREATE TABLE Reasons (
+    ReasonID INT PRIMARY KEY,
+    OrderID INT NOT NULL, -- Links to Orders table
+    ReasonType ENUM('Cancellation', 'Return') NOT NULL,
+    ReasonDescription TEXT NOT NULL,
+    CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UpdatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (OrderID) REFERENCES Orders(OrderID) -- Foreign key to Orders
+);
+
+CREATE TABLE OrderItems (
+    OrderItemID INT PRIMARY KEY,
+    OrderID INT,
+    ProductID INT,
+    Quantity INT,
+    CurrentPrice DECIMAL,
+    CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UpdatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (OrderID) REFERENCES Orders(OrderID),
+    FOREIGN KEY (ProductID) REFERENCES Products(ProductID)
+);
+
+CREATE TABLE ShoppingCarts (
+    CartID INT PRIMARY KEY,
+    CustomerID INT,
+    CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UpdatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (CustomerID) REFERENCES Customers(CustomerID)
+);
+
+CREATE TABLE CartItems (
+    CartItemID INT PRIMARY KEY,
+    CartID INT,
+    ProductID INT,
+    Quantity INT,
+    CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UpdatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (CartID) REFERENCES ShoppingCarts(CartID),
+    FOREIGN KEY (ProductID) REFERENCES Products(ProductID)
+);
+
+CREATE TABLE PaymentMethods (
+    PaymentMethodID INT PRIMARY KEY,
+    MethodName VARCHAR(50) NOT NULL,
+    MethodDescription TEXT,
+    CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UpdatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE Payments (
+    PaymentID INT PRIMARY KEY,
+    OrderID INT,
+    PaymentMethodID INT, -- Links to PaymentMethods table
+    Amount DECIMAL,
+    CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UpdatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (OrderID) REFERENCES Orders(OrderID),
+    FOREIGN KEY (PaymentMethodID) REFERENCES PaymentMethods(PaymentMethodID)
+);
+
+CREATE TABLE Reviews (
+    ReviewID INT PRIMARY KEY,
+    ProductID INT,
+    CustomerID INT,
+    Rating INT,
+    Comment TEXT,
+    CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UpdatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (ProductID) REFERENCES Products(ProductID),
+    FOREIGN KEY (CustomerID) REFERENCES Customers(CustomerID)
+);
+
+CREATE TABLE Addresses (
+    AddressID INT PRIMARY KEY,
+    CustomerID INT,
+    AddressLine VARCHAR(100),
+    City VARCHAR(50),
+    State VARCHAR(50),
+    ZipCode VARCHAR(20),
+    Country VARCHAR(50),
+    IsBillingAddress BIT,
+    IsShippingAddress BIT,
+    CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UpdatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (CustomerID) REFERENCES Customers(CustomerID)
+);
+
+CREATE TABLE Inventory (
+    InventoryID INT PRIMARY KEY,
+    InventoryName VARCHAR(50),
+    ProductID INT,
+    QuantityInStock INT,
+    ReorderThreshold INT,
+    UnitCost DECIMAL,
+    CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UpdatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (ProductID) REFERENCES Products(ProductID)
+);
