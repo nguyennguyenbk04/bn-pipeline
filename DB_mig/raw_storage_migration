@@ -1,0 +1,36 @@
+# bash script to automate upload#!/bin/bash
+
+DB_NAME="online_store"
+MYSQL_USER="bnguyen"
+MYSQL_HOST="127.0.0.1"
+STORAGE_ACCOUNT="kho"
+CONTAINER_NAME="online-store"
+
+# Prompt for MySQL password once
+read -s -p "Enter MySQL Password: " MYSQL_PWD
+echo ""
+
+# Get list of all table names
+tables=$(mysql -h $MYSQL_HOST -u $MYSQL_USER -p$MYSQL_PWD -D $DB_NAME -e "SHOW TABLES;" | tail -n +2)
+
+# Export each table to CSV and upload to Azure
+for table in $tables; do
+    echo "Exporting $table..."
+    
+    mysql -h $MYSQL_HOST -u $MYSQL_USER -p$MYSQL_PWD -e "SELECT * FROM $table" $DB_NAME \
+    | sed 's/\t/","/g;s/^/"/;s/$/"/;s/\n//g' > ${table}.csv
+
+    echo "Uploading $table.csv to Azure Blob Storage..."
+    az storage blob upload \
+        --account-name $STORAGE_ACCOUNT \
+        --container-name $CONTAINER_NAME \
+        --name ${table} \
+        --file ${table}.csv \
+        --auth-mode login
+done
+
+# Delete .csv in local dir
+rm -f *.csv
+
+echo " Done."
+

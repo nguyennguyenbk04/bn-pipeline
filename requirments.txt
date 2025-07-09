@@ -1,0 +1,6 @@
+faker
+mysql-connector-python
+papermill
+pyspark
+ipykernel
+nbconvert
