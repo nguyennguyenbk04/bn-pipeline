@@ -65,6 +65,7 @@ CREATE TABLE FactSales (
     Quantity INT,
     CurrentPrice DECIMAL(18,2),
     Revenue DECIMAL(18,2),
+    CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- Added timestamp
     FOREIGN KEY (ProductID) REFERENCES DimProduct(ProductID),
     FOREIGN KEY (SellerID) REFERENCES DimSeller(SellerID),
     FOREIGN KEY (CustomerID) REFERENCES DimCustomer(CustomerID),
@@ -79,18 +80,8 @@ CREATE TABLE FactOrderReason (
     OrderID INT,
     OrderDateKey INT, -- FK to DimDate
     StatusID INT,
+    CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- Added timestamp
     FOREIGN KEY (ReasonID) REFERENCES DimReason(ReasonID),
     FOREIGN KEY (OrderDateKey) REFERENCES DimDate(DateKey),
     FOREIGN KEY (StatusID) REFERENCES DimOrderStatus(StatusID)
-);
-
--- Customer-product for loyalty/retention analysis
-CREATE TABLE FactCustomerOrder (
-    CustomerID INT,
-    OrderID INT,
-    OrderDateKey INT,
-    Revenue DECIMAL(18,2),
-    PRIMARY KEY (CustomerID, OrderID),
-    FOREIGN KEY (CustomerID) REFERENCES DimCustomer(CustomerID),
-    FOREIGN KEY (OrderDateKey) REFERENCES DimDate(DateKey)
 );
