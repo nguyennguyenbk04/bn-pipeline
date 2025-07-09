@@ -33,6 +33,7 @@ CREATE TABLE Products (
     Name VARCHAR(100),
     Description TEXT,
     Price DECIMAL,
+    Cost DECIMAL,
     CategoryID INT, -- Links to ProductCategories table
     SellerID INT,
     CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -155,7 +156,6 @@ CREATE TABLE Inventory (
     ProductID INT,
     QuantityInStock INT,
     ReorderThreshold INT,
-    UnitCost DECIMAL,
     CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UpdatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (ProductID) REFERENCES Products(ProductID)

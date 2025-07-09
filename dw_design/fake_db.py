@@ -200,18 +200,20 @@ def generate_products(num_products, num_sellers):
         category_idx = random.randint(0, category_count - 1)
         category = PRODUCT_CATEGORIES[category_idx]
         name, desc = random.choice(product_templates[category])
-        # Make name unique by appending a unique code
         while True:
             unique_code = fake.unique.bothify(text='??-###')
             unique_name = f"{name} {unique_code}"
             if unique_name not in used_names:
                 used_names.add(unique_name)
                 break
+        cost = round(random.uniform(5.00, 400.00), 2)
+        price = round(cost * random.uniform(1.18, 1.22), 2)  # Price is ~20% higher than cost
         products.append({
             'ProductID': i,
             'Name': unique_name,
             'Description': desc,
-            'Price': round(random.uniform(5.00, 500.00), 2),
+            'Price': price,
+            'Cost': cost,
             'CategoryID': category_idx + 1,
             'SellerID': random.randint(1, num_sellers),
             'CreatedAt': fake.date_time_between(start_date='-2y', end_date='now'),
@@ -253,15 +255,17 @@ def generate_orders(num_orders, customers):
 def generate_order_items(orders, products):
     order_items = []
     order_item_id = 1
+    product_dict = {p['ProductID']: p for p in products}  # Create a lookup for products by ProductID
     for order in orders:
         num_items = random.randint(1, 5)  # Each order has 1-5 items
         for _ in range(num_items):
+            product = random.choice(products)
             order_items.append({
                 'OrderItemID': order_item_id,
                 'OrderID': order['OrderID'],
-                'ProductID': random.choice(products)['ProductID'],
+                'ProductID': product['ProductID'],
                 'Quantity': random.randint(1, 3),
-                'CurrentPrice': round(random.uniform(5.00, 500.00), 2),
+                'CurrentPrice': product['Price'],  # Use Price from Products table
                 'CreatedAt': order['CreatedAt'],
                 'UpdatedAt': order['UpdatedAt']
             })
@@ -442,18 +446,16 @@ def generate_addresses(customers):
 def generate_inventory(products):
     inventory = []
     inventory_id = 1
-    # Define the percentage of products available in each region
     region_product_percent = {
-        'Asia': 1.0,           # 100% of products
-        'Europe': 0.7,         # 70% of products
-        'North America': 0.5,  # 50% of products
-        'South America': 0.3,  # 30% of products
-        'Australian': 0.2,     # 20% of products
-        'Africa': 0.1          # 10% of products
+        'Asia': 1.0,
+        'Europe': 0.7,
+        'North America': 0.5,
+        'South America': 0.3,
+        'Australian': 0.2,
+        'Africa': 0.1
     }
     for region in INVENTORY_REGIONS:
         percent = region_product_percent.get(region, 0.1)
-        # Randomly select a subset of products for this region
         num_products_in_region = int(len(products) * percent)
         region_products = random.sample(products, num_products_in_region)
         for product in region_products:
@@ -464,7 +466,6 @@ def generate_inventory(products):
                 'ProductID': product['ProductID'],
                 'QuantityInStock': quantity,
                 'ReorderThreshold': random.randint(10, 50),
-                'UnitCost': round(random.uniform(5.00, 500.00), 2),
                 'CreatedAt': fake.date_time_between(start_date='-2y', end_date='now'),
                 'UpdatedAt': fake.date_time_between(start_date='-1y', end_date='now')
             })
