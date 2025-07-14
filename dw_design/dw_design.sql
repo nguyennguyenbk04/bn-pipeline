@@ -67,7 +67,6 @@ CREATE TABLE FactSales (
     UnitCost DECIMAL(18,2),      -- Added column
     Profit DECIMAL(18,2),        -- Added column
     Revenue DECIMAL(18,2),
-    CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- Added timestamp
     FOREIGN KEY (ProductID) REFERENCES DimProduct(ProductID),
     FOREIGN KEY (SellerID) REFERENCES DimSeller(SellerID),
     FOREIGN KEY (CustomerID) REFERENCES DimCustomer(CustomerID),
@@ -82,7 +81,6 @@ CREATE TABLE FactOrderReason (
     OrderID INT,
     OrderDateKey INT, -- FK to DimDate
     StatusID INT,
-    CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- Added timestamp
     FOREIGN KEY (ReasonID) REFERENCES DimReason(ReasonID),
     FOREIGN KEY (OrderDateKey) REFERENCES DimDate(DateKey),
     FOREIGN KEY (StatusID) REFERENCES DimOrderStatus(StatusID)

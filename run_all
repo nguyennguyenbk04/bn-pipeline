@@ -7,4 +7,4 @@ jupyter nbconvert --to notebook --execute --inplace /home/bnguyen/Desktop/DE_pro
 jupyter nbconvert --to notebook --execute --inplace /home/bnguyen/Desktop/DE_project/notebooks/dw_load.ipynb
 
 # chmod +x <link>
-# ./pipeline
+# ./run_all
