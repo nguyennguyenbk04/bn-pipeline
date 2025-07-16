@@ -77,11 +77,16 @@ CREATE TABLE FactSales (
 
 -- Fact Table: Returns & Cancellations
 CREATE TABLE FactOrderReason (
-    ReasonID INT PRIMARY KEY,
+    OrderItemID INT PRIMARY KEY,
+    ReasonID INT,
     OrderID INT,
+    SellerID INT,
     OrderDateKey INT, -- FK to DimDate
     StatusID INT,
+    FOREIGN KEY (OrderItemID) REFERENCES FactSales(OrderItemID),
     FOREIGN KEY (ReasonID) REFERENCES DimReason(ReasonID),
+    FOREIGN KEY (OrderID) REFERENCES FactSales(OrderID),
+    FOREIGN KEY (SellerID) REFERENCES DimSeller(SellerID),
     FOREIGN KEY (OrderDateKey) REFERENCES DimDate(DateKey),
     FOREIGN KEY (StatusID) REFERENCES DimOrderStatus(StatusID)
 );

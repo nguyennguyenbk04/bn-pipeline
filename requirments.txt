@@ -1,6 +1,6 @@
 faker
 mysql-connector-python
 papermill
-pyspark
+pyspark==3.5.0
 ipykernel
 nbconvert
