@@ -1,8 +1,10 @@
 
 
-# DE_project: Real-Time Data Lakehouse Pipeline
+# Real-time MySQL to Azure Data Lake e-commerce pipeline with Debezium, Kafka, and Spark
 
-**DE_project** is a ready-to-use data pipeline for real-time analytics. It captures changes from a MySQL database and streams them to Azure Data Lake using Debezium, Kafka, and Apache Spark. The project is organized for easy setup and analytics, even if you’re new to the stack.
+This project provides a ready-to-use, production-grade data pipeline for real-time analytics. It captures changes from a MySQL database and streams them to Azure Data Lake using Debezium, Kafka, and Apache Spark. The setup is designed for easy deployment, robust ETL, and scalable analytics.
+
+The included example uses an e-commerce database schema, making it easy to understand and adapt for similar real-world scenarios.
 
 ---
 
