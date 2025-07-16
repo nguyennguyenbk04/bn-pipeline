@@ -1,123 +1,113 @@
-# Debezium MySQL Connector Quick Start
+# DE_project: Real-Time Data Lakehouse with MySQL, Debezium, Kafka, Spark, and Azure
 
-## 1. Start Docker Compose Services
-Navigate to your project directory:
+## Overview
+This project implements a modern data lakehouse pipeline for an online store, enabling real-time Change Data Capture (CDC) from MySQL to Azure Data Lake Storage (ADLS) using Debezium, Kafka, and Apache Spark. The architecture supports both batch and streaming ETL, with a layered approach (Bronze, Silver, Gold) for scalable analytics and data warehousing.
+
+---
+
+## Architecture
+- **Source Database:** MySQL (OLTP for online store)
+- **CDC:** Debezium MySQL Connector (Dockerized)
+- **Streaming Platform:** Apache Kafka (Dockerized, dual listener for host and container access)
+- **Bronze Layer:** Raw CDC events stored in ADLS Gen2 (abfss) via Spark Structured Streaming
+- **Silver Layer:** Cleaned, merged, and deduplicated tables (Parquet)
+- **Gold Layer:** Data warehouse star schema (Fact & Dimension tables) for analytics
+- **Orchestration:** Python scripts and Jupyter notebooks
+
+---
+
+## Key Components
+
+### 1. Database Schema
+- See `dw_design/online_store.sql` and `dw_design/dw_design.sql` for full OLTP and DW schemas.
+- Supports multi-seller orders, product categories, payments, reviews, and more.
+
+### 2. CDC & Streaming
+- **Debezium** captures row-level changes from MySQL and publishes to Kafka topics (one per table).
+- **Kafka** acts as the streaming backbone for all table changes.
+- **Bronze Streaming (scripts/streaming/bronze_stream_standalone.py):**
+  - Consumes all table topics from Kafka
+  - Parses Debezium CDC JSON (nested payload)
+  - Writes raw change events to ADLS Gen2, partitioned by ingestion time
+  - Supports both Docker and standalone Spark execution
+
+### 3. Data Lake Layers
+- **Bronze:** Raw CDC events (per table, partitioned by ingestion time)
+- **Silver:** Upsert/merge logic to apply CDC to base tables (notebooks/scripts)
+- **Gold:** Star schema for analytics (FactSales, DimProduct, etc.)
+
+### 4. ETL & Analytics
+- **Jupyter Notebooks (scripts/dw_load.ipynb, table_filter.ipynb, parquet_converter.ipynb):**
+  - Read from Bronze/Silver
+  - Merge CDC changes (upsert/delete)
+  - Build Fact and Dimension tables
+  - Load to MySQL DW or write to Parquet/CSV
+
+---
+
+## How to Run
+
+### 1. Start CDC Infrastructure
 ```bash
-cd ~/Desktop/DE_project/debezium-mysql-connector
+cd debezium-mysql-connector
+# Start Kafka, Zookeeper, Debezium, MySQL
 docker compose up -d
 ```
-Check that the Debezium, Kafka, and Zookeeper containers are running:
-```bash
-docker compose ps
-```
 
-
-## 2. Register the Debezium Connector
-Copy your connector config into the Debezium container:
+### 2. Register Debezium Connector
 ```bash
 docker cp ./config/connector.json debezium-mysql-connector-debezium-1:/connector.json
-```
-Register the connector:
-```bash
 docker exec -it debezium-mysql-connector-debezium-1 curl -X POST -H "Content-Type: application/json" --data @/connector.json http://localhost:8083/connectors
 ```
 
-## Restart the Connector (if needed)
+### 3. Start Bronze Streaming
 ```bash
-docker exec -it debezium-mysql-connector-debezium-1 curl -X POST http://localhost:8083/connectors/mysql-connector/restart
-```
-
-## Delete connector (if needed)
-```bash
-docker exec -it debezium-mysql-connector-debezium-1 curl -X DELETE http://localhost:8083/connectors/mysql-connector
-```
-
-## 4. Check Connector Status
-```bash
-docker exec -it debezium-mysql-connector-debezium-1 curl http://localhost:8083/connectors/mysql-connector/status
-```
-
-## 5. Display changes in DB
-To see changes for tables, use these commands (one per table):
-
-```bash
-docker exec -it debezium-mysql-connector-kafka-1 kafka-console-consumer --bootstrap-server kafka:9092 --topic online_store.online_store.Customers
-```
-
-Or use **Kafka UI** at [http://localhost:8081](http://localhost:8081) to browse all topics
----
-
-## 6. 
-```bash
-docker run --network debezium-network spark-cdc
-```
-
-### Troubleshooting (if needed)
-
-- Check MySQL logs:  
-  ```bash
-  sudo tail -n 50 /var/log/mysql/error.log
-  ```
-- Check Docker logs:  
-  ```bash
-  docker compose logs debezium
-  ```
-- Ensure firewall allows port 3306:  
-  ```bash
-  sudo ufw allow
-
-## 7. Start Bronze Layer Streaming
-
-The bronze streaming layer captures CDC events from Kafka and stores them in Azure Data Lake Storage in real-time.
-
-### Prerequisites
-- Debezium connector running (steps 1-5 completed)
-- Azure storage account credentials configured
-- JAR files in `scripts/jars/` directory (already included)
-
-### Option 1: Run Standalone (Recommended)
-Navigate to streaming directory:
-```bash
-cd ~/Desktop/DE_project/scripts/streaming
-```
-
-Run the bronze streaming application:
-```bash
+cd scripts/streaming
 python bronze_stream_standalone.py
 ```
 
-**Features:**
-- Consumes CDC events from Kafka topic `online_store.online_store.Customers`
-- Parses Debezium JSON format with nested payload structure
-- Extracts customer data from `payload.after` (inserts/updates) and `payload.before` (deletes)
-- Writes to Azure Data Lake Storage in Parquet format
-- Partitioned by ingestion timestamp
-- Processes data every 10 seconds
+### 4. Process Silver/Gold Layers
+- Use notebooks in `scripts/` to merge, clean, and build analytics tables.
 
-### Option 2: Using Docker
-After code changes, rebuild:
-```bash
-cd ~/Desktop/DE_project/scripts/streaming
-docker build -t bronze-streamer .
+---
+
+## Project Structure
+```
+DE_project/
+├── debezium-mysql-connector/   # Docker Compose, Debezium, Kafka configs
+├── dw_design/                  # SQL schemas for OLTP and DW
+├── scripts/
+│   ├── streaming/              # Spark streaming apps, JARs
+│   ├── dw_load.ipynb           # DW ETL notebook
+│   ├── table_filter.ipynb      # Bronze to Silver logic
+│   └── parquet_converter.ipynb # Parquet utilities
+├── README.md                   # Project documentation
+└── requirements.txt            # Python dependencies
 ```
 
-Run the container:
-```bash
-docker run --network debezium-mysql-connector_debezium-network bronze-streamer
-```
+---
 
-### Testing the Stream
-1. Start the streaming application
-2. Insert test data in MySQL:
-   ```bash
-   docker exec -it mysql mysql -u root -ppassword online_store -e "INSERT INTO Customers (CustomerID, Name, Email, PhoneNumber) VALUES (10000006, 'Test User', 'test@example.com', '1234567890');"
-   ```
-3. Check streaming logs for data processing
-4. Verify data in Azure storage or use the `table_filter.ipynb` notebook to read from bronze layer
+## Features
+- Real-time CDC from MySQL to Azure Data Lake
+- Handles all major OLTP tables (Customers, Orders, Products, etc.)
+- Schema evolution and multi-table support
+- Partitioned, scalable storage in ADLS Gen2
+- Modular ETL for Silver/Gold layers
+- Ready for analytics, BI, and ML workloads
 
-### Configuration Notes
-- **Kafka Connection:** Uses `localhost:9093` (external listener)
-- **Azure Storage:** Configured for ADLS Gen2 with abfss protocol
-- **Checkpoints:** Stored in `/tmp/checkpoints/` directory
-- **Processing:** Real-time with 10-second micro-batches
-- **Schema:** Handles Debezium CDC format with operation types (insert/update/delete)
+---
+
+## Useful Links
+- **Kafka UI:** http://localhost:8081
+- **Debezium Connect API:** http://localhost:8083
+- **Azure Storage Explorer:** (for ADLS browsing)
+
+---
+
+## Authors
+- Data Engineering Team
+
+---
+
+## License
+MIT License
