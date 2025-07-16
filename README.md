@@ -103,11 +103,3 @@ DE_project/
 - **Azure Storage Explorer:** (for ADLS browsing)
 
 ---
-
-## Authors
-- Data Engineering Team
-
----
-
-## License
-MIT License
