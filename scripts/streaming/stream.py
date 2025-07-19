@@ -396,3 +396,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    # rm -rf /tmp/checkpoints/Customers
