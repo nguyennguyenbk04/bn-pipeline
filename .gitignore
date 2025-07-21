@@ -4,8 +4,7 @@ venv/
 __pycache__/
 .DS_Store
 *.egg-info/
-scripts/streaming/test.ipynb
-scripts/streaming/stream-debug.py 
-scripts/jars
-scripts/streaming/artifacts
-scripts/streaming/jars
+scripts/streaming/test.ipynb/
+scripts/jars/
+scripts/streaming/artifacts/
+scripts/streaming/jars/
