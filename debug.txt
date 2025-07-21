@@ -85,6 +85,7 @@ Run the bronze streaming application:
 ```bash
 python bronze_stream_standalone.py
 ```
+If fail: rm -rf /tmp/checkpoints/{Table_name}
 
 **Features:**
 - Consumes CDC events from Kafka topic `online_store.online_store.Customers`
@@ -94,17 +95,6 @@ python bronze_stream_standalone.py
 - Partitioned by ingestion timestamp
 - Processes data every 10 seconds
 
-### Option 2: Using Docker
-After code changes, rebuild:
-```bash
-cd ~/Desktop/DE_project/scripts/streaming
-docker build -t bronze-streamer .
-```
-
-Run the container:
-```bash
-docker run --network debezium-mysql-connector_debezium-network bronze-streamer
-```
 
 ### Testing the Stream
 1. Start the streaming application
