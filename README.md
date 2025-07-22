@@ -1,154 +1,308 @@
 
 
-# Real-time MySQL to Azure Data Lake e-commerce pipeline with Debezium, Kafka, and Spark
+# Real-time MySQL to Azure Data Lake E-commerce Pipeline
 
-This project provides a ready-to-use, production-grade data pipeline for real-time analytics. It captures changes from a MySQL database and streams them to Azure Data Lake using Debezium, Kafka, and Apache Spark. The setup is designed for easy deployment, robust ETL, and scalable analytics.
+A complete real-time data pipeline that captures MySQL database changes and streams them to Azure Data Lake using **Debezium CDC**, **Apache Kafka**, and **Apache Spark**. Features chronological event processing across Bronze, Silver, and Gold layers for robust data consistency.
 
-The included example uses an e-commerce database schema, making it easy to understand and adapt for similar real-world scenarios.
-
----
-
-## Environment Setup (Before You Start)
-
-Follow these steps to prepare your environment before running the project:
-
-1. **Install Docker & Docker Compose**
-   - Windows/Mac: [Docker Desktop](https://www.docker.com/products/docker-desktop/)
-   - Linux: `sudo apt install docker.io`
-   - Check: `docker --version` and `docker compose version`
-
-2. **Install Python 3.8 or newer**
-   - [Download Python](https://www.python.org/downloads/)
-   - Check: `python --version`
-   - (Recommended) Create a virtual environment:
-     ```bash
-     python -m venv venv
-     source venv/bin/activate  # On Windows: venv\Scripts\activate
-     ```
-
-3. **Install Java (for Spark)**
-   - Java 8 or 11 recommended
-   - Check: `java -version`
-
-4. **Install Apache Spark**
-   - [Download Spark](https://spark.apache.org/downloads.html) and follow the install guide
-   - Or install PySpark: `pip install pyspark`
-
-5. **Install Python dependencies**
-   - Run: `pip install -r requirements.txt`
-
-6. **Azure Data Lake Storage Gen2 Account**
-   - Make sure you have an Azure Storage account with Data Lake Gen2 enabled
-   - Update credentials in the config files or as environment variables as needed
-
-7. **(Optional) Azure Storage Explorer**
-   - [Download](https://azure.microsoft.com/en-us/products/storage/storage-explorer/) to browse your Data Lake output
+**Key Features:**
+- ✅ Real-time CDC from MySQL to Azure Data Lake (Bronze/Silver/Gold layers)
+- ✅ Chronological event processing (INSERT → UPDATE → DELETE order)
+- ✅ Multi-layer architecture with smart partitioning
+- ✅ Dockerized infrastructure (MySQL, Kafka, Zookeeper, Debezium)
+- ✅ Production-ready e-commerce schema with sample data
 
 ---
 
+## Architecture Overview
 
-## Setup & Run: Step-by-Step
+```
+MySQL Database (OLTP)
+    ↓ (Debezium CDC)
+Apache Kafka
+    ↓ (Spark Streaming)
+Azure Data Lake Storage Gen2
+    ├── Bronze Layer (Raw CDC events)
+    ├── Silver Layer (Cleaned data)
+    └── Gold Layer (Analytics-ready)
+```
+
+**Pipeline Stages:**
+1. **Bronze Layer**: Raw CDC events with full audit trail
+2. **Silver Layer**: Cleaned, deduplicated operational data  
+3. **Gold Layer**: Aggregated, analytics-ready datasets
+
+---
+
+## Environment Setup
 
 ### Prerequisites
 
-1. **Install Docker**
-   - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows/Mac)
-   - Or `sudo apt install docker.io` (Linux)
-   - Make sure Docker Compose is available (`docker compose version`)
+1. **Docker & Docker Compose**
+   ```bash
+   # Check installation
+   docker --version
+   docker compose version
+   ```
 
-2. **Install Python 3.8+**
-   - [Python Downloads](https://www.python.org/downloads/)
-   - Recommended: Use a virtual environment (`python -m venv venv`)
+2. **Python 3.8+**
+   ```bash
+   python --version
+   # Recommended: Create virtual environment
+   python -m venv venv
+   source venv/bin/activate  # Windows: venv\Scripts\activate
+   ```
 
-3. **Install Java (for Spark)**
-   - Java 8 or 11 recommended (`java -version`)
+3. **Java 8 or 11** (for Spark)
+   ```bash
+   java -version
+   ```
 
-4. **Install Apache Spark (if running locally)**
-   - [Spark Downloads](https://spark.apache.org/downloads.html)
-   - Or use PySpark via pip: `pip install pyspark`
+4. **Azure Data Lake Storage Gen2**
+   - Create storage accounts: `mybronze`, `mysilver`, `mygold`
+   - Update credentials in streaming scripts
 
-5. **Azure Storage Account**
-   - You need an Azure Data Lake Storage Gen2 account and credentials (update configs as needed).
+5. **Install Dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
 
 ---
 
-### 1. Clone the repository
-```bash
-git clone <your-repo-url>
-cd DE_project
-```
+## Quick Start
 
-### 2. Set up Python environment
+### 1. Clone and Setup
 ```bash
+git clone <repository-url>
+cd DE_project
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 3. Start the data infrastructure (MySQL, Kafka, Debezium)
+### 2. Start Infrastructure
 ```bash
 cd debezium-mysql-connector
 docker compose up -d
 ```
-This will start MySQL, Kafka, Zookeeper, and Debezium in Docker containers. Wait a few seconds for all services to be healthy.
+Wait for all services to be healthy (~30 seconds).
 
-### 4. Register the Debezium MySQL connector
-This step tells Debezium which MySQL database to monitor for changes.
+### 3. Create Sample Database
 ```bash
-docker cp ./config/connector.json debezium-mysql-connector-debezium-1:/connector.json
-docker exec -it debezium-mysql-connector-debezium-1 curl -X POST -H "Content-Type: application/json" --data @/connector.json http://localhost:8083/connectors
+# Load the e-commerce schema and sample data
+docker exec -i debezium-mysql-connector-mysql-1 mysql -u root -prootpassword < ../dw_design/online_store.sql
 ```
-You should see a JSON response confirming the connector is created.
 
-### 5. Start the Spark streaming job
-This job reads changes from Kafka and writes them to Azure Data Lake.
+### 4. Register Debezium Connector
+```bash
+# Configure CDC monitoring
+bash start_debezium.sh
+```
+
+### 5. Start Real-time Streaming (Choose your layer)
+
+**Bronze Layer** (Raw CDC events):
 ```bash
 cd ../scripts/streaming
-python bronze_stream_standalone.py
+python stream-bronze.py
 ```
-You should see log messages like `[READY] Listening for changes on table: ...`.
 
-### 6. Explore and analyze the data
-- Use the notebooks in `scripts/` (like `dw_load.ipynb` and `table_filter.ipynb`) to process and analyze your data.
-- You can use Azure Storage Explorer to browse the output in your Data Lake.
+**Silver Layer** (Cleaned operational data):
+```bash
+python stream-silver.py
+```
 
----
+**Gold Layer** (Analytics aggregations):
+```bash
+python stream-gold.py
+```
 
-### Troubleshooting
-- If you get connection errors, make sure all Docker containers are running (`docker ps`).
-- If Spark cannot connect to Azure, check your credentials in the config and environment variables.
-- For more help, see the comments in each script and notebook.
+### 6. Test the Pipeline
+```sql
+-- Connect to MySQL and make changes
+docker exec -it debezium-mysql-connector-mysql-1 mysql -u root -prootpassword online_store
+
+-- Test chronological processing
+INSERT INTO Customers (Name, Email, PhoneNumber) VALUES ('Test User', 'test@example.com', '555-0123');
+UPDATE Customers SET Name = 'Updated User' WHERE Email = 'test@example.com';
+DELETE FROM Customers WHERE Email = 'test@example.com';
+```
+
+Watch the streaming logs to see events processed in chronological order!
 
 ---
 
 ## Project Structure
+
 ```
 DE_project/
-├── debezium-mysql-connector/   # Docker Compose, Debezium, Kafka configs
-├── dw_design/                  # SQL schemas for OLTP and DW
+├── debezium-mysql-connector/      # Infrastructure setup
+│   ├── docker-compose.yml         # MySQL, Kafka, Debezium containers
+│   ├── start_debezium.sh          # Automated connector setup
+│   └── config/                    # Debezium connector configuration
+├── dw_design/                     # Database schemas
+│   ├── online_store.sql           # E-commerce OLTP schema + sample data
+│   ├── dw_design.sql             # Data warehouse schema
+│   └── fake_db.py                # Data generation utilities
 ├── scripts/
-│   ├── streaming/              # Spark streaming apps, JARs
-│   ├── dw_load.ipynb           # DW ETL notebook
-│   ├── table_filter.ipynb      # Bronze to Silver logic
-│   └── parquet_converter.ipynb # Parquet utilities
-├── README.md                   # Project documentation
-└── requirements.txt            # Python dependencies
+│   ├── streaming/                 # Real-time processing
+│   │   ├── stream-bronze.py       # Bronze layer CDC processing
+│   │   ├── stream-silver.py       # Silver layer data cleaning
+│   │   ├── stream-gold.py         # Gold layer aggregations
+│   │   └── jars/                  # Spark dependencies (auto-downloaded)
+│   ├── dw_load.ipynb             # Batch ETL notebook
+│   ├── table_filter.ipynb        # Data filtering utilities
+│   └── parquet_converter.ipynb   # Format conversion tools
+├── DB_mig/                       # Migration utilities
+│   ├── raw_storage_migration     # Data migration scripts
+│   └── single_table_mig         # Single table migration
+├── README.md                     # This documentation
+├── requirements.txt              # Python dependencies
+└── .gitignore                   # Git ignore rules
 ```
 
 ---
 
-## Features
-- Real-time sync from MySQL to Azure Data Lake
-- Easy setup with Docker and Python
-- Modular notebooks for analytics and ETL
-- Handles all major tables (Customers, Orders, Products, etc.)
-- Scalable, partitioned storage
+## Key Features Explained
+
+### 🔄 Chronological CDC Processing
+The pipeline ensures data consistency by processing CDC events in chronological order:
+1. **INSERT** operations (oldest events first)
+2. **UPDATE** operations (middle events)  
+3. **DELETE** operations (newest events last)
+
+This prevents data inconsistencies that occur when events are processed out of order.
+
+### 🏗️ Multi-Layer Architecture
+
+**Bronze Layer (`stream-bronze.py`)**:
+- Raw CDC events with full audit trail
+- Preserves all database changes
+- Includes operation type and timestamps
+
+**Silver Layer (`stream-silver.py`)**:  
+- Deduplicated operational data
+- Cleaned and validated records
+- Business-ready datasets
+
+**Gold Layer (`stream-gold.py`)**:
+- Aggregated analytics datasets
+- SCD Type 4 dimension tracking
+- Pre-computed metrics
+
+### ⚡ Smart Partitioning
+Automatic partitioning based on data volume:
+- Small datasets: Single file
+- Medium datasets: 2-4 files
+- Large datasets: Up to 10 files
+
+### 🔧 Production Features
+- Automatic cache management
+- Error recovery and retry logic
+- Configurable checkpoint locations
+- Background process monitoring
 
 ---
 
-## Helpful Links
-- **Kafka UI:** http://localhost:8081
-- **Debezium Connect API:** http://localhost:8083
-- **Azure Storage Explorer:** (for browsing ADLS)
+## Monitoring & Management
+
+### Service Health Check
+```bash
+# Check all containers
+docker ps
+
+# View logs
+docker logs debezium-mysql-connector-kafka-1
+docker logs debezium-mysql-connector-debezium-1
+```
+
+### Kafka Management
+- **Kafka UI**: http://localhost:8081
+- **Debezium Connect API**: http://localhost:8083
+- **Connector Status**: http://localhost:8083/connectors
+
+### Azure Storage
+Use [Azure Storage Explorer](https://azure.microsoft.com/en-us/products/storage/storage-explorer/) to browse your Data Lake output.
 
 ---
+
+## Configuration
+
+### Azure Storage Credentials
+Update the storage account keys in your streaming scripts:
+
+```python
+# In stream-bronze.py, stream-silver.py, stream-gold.py
+spark.conf.set(
+    "fs.azure.account.key.mybronze.dfs.core.windows.net",
+    "YOUR_BRONZE_STORAGE_KEY"
+)
+```
+
+### Checkpoint Management
+```bash
+# Clear checkpoints for fresh start
+rm -rf /tmp/checkpoints/cdc_*
+rm -rf /tmp/checkpoints/*
+```
+
+---
+
+## Troubleshooting
+
+### Common Issues
+
+**Connection Errors:**
+```bash
+# Ensure all services are running
+docker ps
+# Restart if needed
+docker compose down && docker compose up -d
+```
+
+**Kafka Connectivity:**
+- Check if Kafka is accessible on port 9093
+- Verify Debezium connector is registered: `curl http://localhost:8083/connectors`
+
+**Azure Storage Issues:**
+- Verify storage account keys are correct
+- Ensure Data Lake Gen2 is enabled
+- Check firewall settings
+
+**Out of Order Processing:**
+- The pipeline now automatically handles chronological ordering
+- Events are sorted by timestamp within each batch
+
+### Debug Mode
+Enable detailed logging in streaming scripts:
+```python
+spark.sparkContext.setLogLevel("DEBUG")
+```
+
+---
+
+## Sample E-commerce Schema
+
+The project includes a complete e-commerce database with:
+- **Customers**: Customer information and profiles
+- **Sellers**: Vendor and supplier data
+- **Products**: Product catalog with categories
+- **Orders**: Order lifecycle and status tracking
+- **OrderItems**: Detailed line items
+- **Payments**: Payment processing records
+- **Reasons**: Return and refund tracking
+
+---
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Test with the provided e-commerce schema
+5. Submit a pull request
+
+---
+
+## License
+
+This project is open source and available under the MIT License.
