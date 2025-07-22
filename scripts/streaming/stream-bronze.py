@@ -417,6 +417,11 @@ def process_cdc_to_table(df, bronze_final_path, table_name, schema=None, spark=N
             # Clear cache at the beginning of each batch to prevent stale file references
             spark.catalog.clearCache()
             print(f"[DEBUG] Cleared Spark cache for batch {batch_id}")
+            
+            # CRITICAL: Sort batch by timestamp to ensure chronological processing
+            # This ensures INSERT -> UPDATE -> DELETE order even if Kafka delivers out of order
+            batch_df = batch_df.orderBy(col("parsed.payload.ts_ms").asc())
+            print(f"[DEBUG] Ordered batch {batch_id} by timestamp for chronological processing")
                 
             # Extract CDC data based on table type - exclude operation, kafka_timestamp, ingestion_timestamp
             if table_name == "Customers":
@@ -427,8 +432,9 @@ def process_cdc_to_table(df, bronze_final_path, table_name, schema=None, spark=N
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.PhoneNumber")).otherwise(col("parsed.payload.before.PhoneNumber")).alias("PhoneNumber"),
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.CreatedAt")).otherwise(col("parsed.payload.before.CreatedAt")).alias("CreatedAt"),
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.UpdatedAt")).otherwise(col("parsed.payload.before.UpdatedAt")).alias("UpdatedAt"),
-                    col("parsed.payload.op").alias("operation")
-                )
+                    col("parsed.payload.op").alias("operation"),
+                    col("parsed.payload.ts_ms").alias("event_timestamp")  # Preserve timestamp for ordering
+                ).orderBy(col("event_timestamp").asc())  # Maintain chronological order
             elif table_name == "Sellers":
                 cdc_df = batch_df.select(
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.SellerID")).otherwise(col("parsed.payload.before.SellerID")).alias("SellerID"),
@@ -437,8 +443,9 @@ def process_cdc_to_table(df, bronze_final_path, table_name, schema=None, spark=N
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.PhoneNumber")).otherwise(col("parsed.payload.before.PhoneNumber")).alias("PhoneNumber"),
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.CreatedAt")).otherwise(col("parsed.payload.before.CreatedAt")).alias("CreatedAt"),
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.UpdatedAt")).otherwise(col("parsed.payload.before.UpdatedAt")).alias("UpdatedAt"),
-                    col("parsed.payload.op").alias("operation")
-                )
+                    col("parsed.payload.op").alias("operation"),
+                    col("parsed.payload.ts_ms").alias("event_timestamp")  # Preserve timestamp for ordering
+                ).orderBy(col("event_timestamp").asc())  # Maintain chronological order
             elif table_name == "ProductCategories":
                 cdc_df = batch_df.select(
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.CategoryID")).otherwise(col("parsed.payload.before.CategoryID")).alias("CategoryID"),
@@ -446,8 +453,9 @@ def process_cdc_to_table(df, bronze_final_path, table_name, schema=None, spark=N
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.CategoryDescription")).otherwise(col("parsed.payload.before.CategoryDescription")).alias("CategoryDescription"),
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.CreatedAt")).otherwise(col("parsed.payload.before.CreatedAt")).alias("CreatedAt"),
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.UpdatedAt")).otherwise(col("parsed.payload.before.UpdatedAt")).alias("UpdatedAt"),
-                    col("parsed.payload.op").alias("operation")
-                )
+                    col("parsed.payload.op").alias("operation"),
+                    col("parsed.payload.ts_ms").alias("event_timestamp")  # Preserve timestamp for ordering
+                ).orderBy(col("event_timestamp").asc())  # Maintain chronological order
             elif table_name == "Products":
                 cdc_df = batch_df.select(
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.ProductID")).otherwise(col("parsed.payload.before.ProductID")).alias("ProductID"),
@@ -459,8 +467,9 @@ def process_cdc_to_table(df, bronze_final_path, table_name, schema=None, spark=N
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.SellerID")).otherwise(col("parsed.payload.before.SellerID")).alias("SellerID"),
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.CreatedAt")).otherwise(col("parsed.payload.before.CreatedAt")).alias("CreatedAt"),
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.UpdatedAt")).otherwise(col("parsed.payload.before.UpdatedAt")).alias("UpdatedAt"),
-                    col("parsed.payload.op").alias("operation")
-                )
+                    col("parsed.payload.op").alias("operation"),
+                    col("parsed.payload.ts_ms").alias("event_timestamp")  # Preserve timestamp for ordering
+                ).orderBy(col("event_timestamp").asc())  # Maintain chronological order
             elif table_name == "OrderStatus":
                 cdc_df = batch_df.select(
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.StatusID")).otherwise(col("parsed.payload.before.StatusID")).alias("StatusID"),
@@ -468,8 +477,9 @@ def process_cdc_to_table(df, bronze_final_path, table_name, schema=None, spark=N
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.StatusDescription")).otherwise(col("parsed.payload.before.StatusDescription")).alias("StatusDescription"),
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.CreatedAt")).otherwise(col("parsed.payload.before.CreatedAt")).alias("CreatedAt"),
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.UpdatedAt")).otherwise(col("parsed.payload.before.UpdatedAt")).alias("UpdatedAt"),
-                    col("parsed.payload.op").alias("operation")
-                )
+                    col("parsed.payload.op").alias("operation"),
+                    col("parsed.payload.ts_ms").alias("event_timestamp")  # Preserve timestamp for ordering
+                ).orderBy(col("event_timestamp").asc())  # Maintain chronological order
             elif table_name == "Orders":
                 cdc_df = batch_df.select(
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.OrderID")).otherwise(col("parsed.payload.before.OrderID")).alias("OrderID"),
@@ -479,8 +489,9 @@ def process_cdc_to_table(df, bronze_final_path, table_name, schema=None, spark=N
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.CustomerID")).otherwise(col("parsed.payload.before.CustomerID")).alias("CustomerID"),
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.CreatedAt")).otherwise(col("parsed.payload.before.CreatedAt")).alias("CreatedAt"),
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.UpdatedAt")).otherwise(col("parsed.payload.before.UpdatedAt")).alias("UpdatedAt"),
-                    col("parsed.payload.op").alias("operation")
-                )
+                    col("parsed.payload.op").alias("operation"),
+                    col("parsed.payload.ts_ms").alias("event_timestamp")  # Preserve timestamp for ordering
+                ).orderBy(col("event_timestamp").asc())  # Maintain chronological order
             elif table_name == "OrderItems":
                 cdc_df = batch_df.select(
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.OrderItemID")).otherwise(col("parsed.payload.before.OrderItemID")).alias("OrderItemID"),
@@ -490,8 +501,9 @@ def process_cdc_to_table(df, bronze_final_path, table_name, schema=None, spark=N
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.CurrentPrice")).otherwise(col("parsed.payload.before.CurrentPrice")).alias("CurrentPrice"),
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.CreatedAt")).otherwise(col("parsed.payload.before.CreatedAt")).alias("CreatedAt"),
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.UpdatedAt")).otherwise(col("parsed.payload.before.UpdatedAt")).alias("UpdatedAt"),
-                    col("parsed.payload.op").alias("operation")
-                )
+                    col("parsed.payload.op").alias("operation"),
+                    col("parsed.payload.ts_ms").alias("event_timestamp")  # Preserve timestamp for ordering
+                ).orderBy(col("event_timestamp").asc())  # Maintain chronological order
             elif table_name == "Reasons":
                 cdc_df = batch_df.select(
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.ReasonID")).otherwise(col("parsed.payload.before.ReasonID")).alias("ReasonID"),
@@ -500,8 +512,9 @@ def process_cdc_to_table(df, bronze_final_path, table_name, schema=None, spark=N
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.ReasonDescription")).otherwise(col("parsed.payload.before.ReasonDescription")).alias("ReasonDescription"),
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.CreatedAt")).otherwise(col("parsed.payload.before.CreatedAt")).alias("CreatedAt"),
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.UpdatedAt")).otherwise(col("parsed.payload.before.UpdatedAt")).alias("UpdatedAt"),
-                    col("parsed.payload.op").alias("operation")
-                )
+                    col("parsed.payload.op").alias("operation"),
+                    col("parsed.payload.ts_ms").alias("event_timestamp")  # Preserve timestamp for ordering
+                ).orderBy(col("event_timestamp").asc())  # Maintain chronological order
             elif table_name == "Payments":
                 cdc_df = batch_df.select(
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.PaymentID")).otherwise(col("parsed.payload.before.PaymentID")).alias("PaymentID"),
@@ -510,8 +523,9 @@ def process_cdc_to_table(df, bronze_final_path, table_name, schema=None, spark=N
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.Amount")).otherwise(col("parsed.payload.before.Amount")).alias("Amount"),
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.CreatedAt")).otherwise(col("parsed.payload.before.CreatedAt")).alias("CreatedAt"),
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.UpdatedAt")).otherwise(col("parsed.payload.before.UpdatedAt")).alias("UpdatedAt"),
-                    col("parsed.payload.op").alias("operation")
-                )
+                    col("parsed.payload.op").alias("operation"),
+                    col("parsed.payload.ts_ms").alias("event_timestamp")  # Preserve timestamp for ordering
+                ).orderBy(col("event_timestamp").asc())  # Maintain chronological order
             else:
                 return  # Skip unknown tables
             
@@ -562,25 +576,26 @@ def process_cdc_to_table(df, bronze_final_path, table_name, schema=None, spark=N
                     result_df = existing_df.cache()  # Cache to materialize the data
                     print(f"[DEBUG] Cached existing data for {table_name}: {result_df.count()} records")
 
-                    # Handle deletes: remove records
-                    if deletes.count() > 0:
-                        delete_ids = deletes.select(pk_col).collect()
-                        delete_values = [row[pk_col] for row in delete_ids]
-                        result_df = result_df.filter(~col(pk_col).isin(delete_values))
+                    # CHRONOLOGICAL ORDER: Process events in the order they happened
+                    # 1. Handle inserts first (oldest events): add new records
+                    if inserts.count() > 0:
+                        inserts_clean = inserts.drop("operation", "event_timestamp")
+                        result_df = result_df.union(inserts_clean)
 
-                    # Handle updates: remove old records first
+                    # 2. Handle updates second (middle events): remove old records and add updated ones
                     if updates.count() > 0:
                         update_ids = updates.select(pk_col).collect()
                         update_values = [row[pk_col] for row in update_ids]
                         result_df = result_df.filter(~col(pk_col).isin(update_values))
-                        # Add updated records (remove operation column)
-                        updates_clean = updates.drop("operation")
+                        # Add updated records (remove operation and event_timestamp columns)
+                        updates_clean = updates.drop("operation", "event_timestamp")
                         result_df = result_df.union(updates_clean)
 
-                    # Handle inserts: add new records
-                    if inserts.count() > 0:
-                        inserts_clean = inserts.drop("operation")
-                        result_df = result_df.union(inserts_clean)
+                    # 3. Handle deletes last (newest events): remove records
+                    if deletes.count() > 0:
+                        delete_ids = deletes.select(pk_col).collect()
+                        delete_values = [row[pk_col] for row in delete_ids]
+                        result_df = result_df.filter(~col(pk_col).isin(delete_values))
 
                     # Use smart partitioning instead of fixed coalesce(1)
                     partitions_used = smart_partitioning_write(result_df, bronze_final_path, table_name)
@@ -596,7 +611,7 @@ def process_cdc_to_table(df, bronze_final_path, table_name, schema=None, spark=N
                     # Table doesn't exist, create it with inserts/updates only
                     if inserts.count() > 0 or updates.count() > 0:
                         new_records = inserts.union(updates) if inserts.count() > 0 and updates.count() > 0 else (inserts if inserts.count() > 0 else updates)
-                        new_records_clean = new_records.drop("operation")
+                        new_records_clean = new_records.drop("operation", "event_timestamp")
                         # Use smart partitioning for new tables too
                         partitions_used = smart_partitioning_write(new_records_clean, bronze_final_path, table_name)
                         
@@ -610,7 +625,7 @@ def process_cdc_to_table(df, bronze_final_path, table_name, schema=None, spark=N
                 # If there's any other error, try to create table with inserts/updates only
                 if inserts.count() > 0 or updates.count() > 0:
                     new_records = inserts.union(updates) if inserts.count() > 0 and updates.count() > 0 else (inserts if inserts.count() > 0 else updates)
-                    new_records_clean = new_records.drop("operation")
+                    new_records_clean = new_records.drop("operation", "event_timestamp")
                     # Use smart partitioning for error recovery too
                     partitions_used = smart_partitioning_write(new_records_clean, bronze_final_path, table_name)
                     
