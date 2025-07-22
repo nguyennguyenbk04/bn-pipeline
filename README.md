@@ -148,46 +148,35 @@ Watch the streaming logs to see:
 
 ## Project Structure
 
+
+
 ```
 DE_project/
-├── debezium-mysql-connector/      # Infrastructure setup
-│   ├── docker-compose.yml         # MySQL, Kafka, Debezium containers
-│   ├── start_debezium.sh          # Automated connector setup
-│   └── config/                    # Debezium connector configuration
-├── dw_design/                     # Database schemas
-│   ├── online_store.sql           # E-commerce OLTP schema + sample data
-│   ├── dw_design.sql             # Data warehouse schema
-│   └── fake_db.py                # Data generation utilities
+├── debezium-mysql-connector/      # Infrastructure: MySQL, Kafka, Debezium
+│   ├── docker-compose.yml         # Container orchestration
+│   ├── start_debezium.sh          # Debezium connector setup
+│   └── config/                    # Debezium connector configs
+├── dw_design/                     # Database schemas & sample data
+│   ├── online_store.sql           # E-commerce OLTP schema
+│   ├── dw_design.sql              # Data warehouse schema
+│   └── fake_db.py                 # Data generation utilities
 ├── scripts/
-│   ├── streaming-delta/           # Delta Lake real-time processing (RECOMMENDED)
-│   │   ├── stream-bronze-delta.py # Bronze layer CDC with ACID transactions
-│   │   ├── stream-silver-delta.py # Silver layer with Delta versioning
-│   │   ├── stream-gold-delta.py   # Gold layer SCD Type 4 with history
-│   │   ├── setup_directories.py  # Delta Lake directory setup
+│   ├── streaming-delta/           # Delta Lake real-time streaming (RECOMMENDED)
+│   │   ├── stream-bronze-delta.py # Bronze layer CDC (Delta Lake)
+│   │   ├── stream-silver-delta.py # Silver layer cleaning (Delta Lake)
+│   │   ├── stream-gold-delta.py   # Gold layer SCD Type 4 (Delta Lake)
 │   │   └── requirements-delta.txt # Delta Lake dependencies
-│   ├── streaming/                 # Legacy Parquet processing
-│   │   ├── stream-bronze.py       # Bronze layer CDC processing (Parquet)
-│   │   ├── stream-silver.py       # Silver layer data cleaning (Parquet)
-│   │   ├── stream-gold.py         # Gold layer aggregations (Parquet)
-│   │   └── jars/                  # Spark dependencies (auto-downloaded)
-│   ├── batch-delta/               # Delta Lake batch processing
-│   │   ├── table_filter_delta.ipynb    # Delta Lake data filtering
-│   │   └── dw_load_delta.ipynb         # Delta Lake data warehouse ETL
-│   ├── batch/                     # Legacy Parquet batch processing
-│   │   ├── dw_load.ipynb          # Batch ETL notebook (Parquet)
-│   │   ├── table_filter.ipynb     # Data filtering utilities (Parquet)
-│   │   └── parquet_converter.ipynb # Format conversion tools
-│   └── jars/                      # Shared Spark dependencies
-├── DB_mig/                       # Migration utilities
-│   ├── raw_storage_migration     # Data migration scripts
-│   └── single_table_mig         # Single table migration
-├── README.md                     # This documentation
-├── requirements.txt              # Python dependencies
-└── .gitignore                   # Git ignore rules
+│   ├── batch-delta/               # Delta Lake batch ETL & utilities
+│   │   ├── table_filter_delta.ipynb # Delta Lake data filtering
+│   │   ├── dw_load_delta.ipynb      # Delta Lake data warehouse ETL
+│   │   └── csv_to_delta_converter.ipynb # CSV to Delta conversion
+│   ├── jars/                      # Shared Spark dependencies
+├── DB_mig/                        # Migration utilities
+│   ├── raw_storage_migration      # Data migration scripts
+│   └── single_table_mig           # Single table migration
 ```
 
----
-
+```
 ## JAR Dependencies Setup
 
 The streaming applications require specific JAR files for Azure Storage, Kafka connectivity, and **Delta Lake support**. These are automatically managed but you may need to download them manually if needed.
