@@ -5,11 +5,11 @@
 A complete real-time data pipeline that captures MySQL database changes and streams them to Azure Data Lake using **Debezium CDC**, **Apache Kafka**, and **Apache Spark**. Features chronological event processing across Bronze, Silver, and Gold layers for robust data consistency.
 
 **Key Features:**
-- ✅ Real-time CDC from MySQL to Azure Data Lake (Bronze/Silver/Gold layers)
-- ✅ Chronological event processing (INSERT → UPDATE → DELETE order)
-- ✅ Multi-layer architecture with smart partitioning
-- ✅ Dockerized infrastructure (MySQL, Kafka, Zookeeper, Debezium)
-- ✅ Production-ready e-commerce schema with sample data
+- Real-time CDC from MySQL to Azure Data Lake (Bronze/Silver/Gold layers)
+- Chronological event processing (INSERT → UPDATE → DELETE order)
+- Multi-layer architecture with smart partitioning
+- Dockerized infrastructure (MySQL, Kafka, Zookeeper, Debezium)
+- Production-ready e-commerce schema with sample data
 
 ---
 
