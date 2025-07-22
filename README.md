@@ -176,7 +176,7 @@ DE_project/
 │   └── single_table_mig           # Single table migration
 ```
 
-```
+
 ## JAR Dependencies Setup
 
 The streaming applications require specific JAR files for Azure Storage, Kafka connectivity, and **Delta Lake support**. These are automatically managed but you may need to download them manually if needed.
