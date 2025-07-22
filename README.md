@@ -162,44 +162,38 @@ DE_project/
 
 ---
 
-## Key Features Explained
+## JAR Dependencies Setup
 
-### 🔄 Chronological CDC Processing
-The pipeline ensures data consistency by processing CDC events in chronological order:
-1. **INSERT** operations (oldest events first)
-2. **UPDATE** operations (middle events)  
-3. **DELETE** operations (newest events last)
+The streaming applications require specific JAR files for Azure Storage and Kafka connectivity. These are automatically managed but you may need to download them manually if needed.
 
-This prevents data inconsistencies that occur when events are processed out of order.
+### Required JAR Files
+```
+scripts/jars/                          # Main JAR directory
+├── azure-storage-8.6.6.jar           # Azure Storage connectivity
+├── hadoop-azure-3.3.6.jar            # Hadoop Azure integration
+├── hadoop-common-3.3.6.jar           # Hadoop core libraries
+├── jetty-client-9.4.43.v20210629.jar # HTTP client for Azure
+├── jetty-http-9.4.43.v20210629.jar   # HTTP protocol support
+├── jetty-io-9.4.43.v20210629.jar     # I/O utilities
+├── jetty-util-9.4.43.v20210629.jar   # Jetty utilities
+├── jetty-util-ajax-9.4.43.v20210629.jar # AJAX utilities
+├── kafka-clients-3.5.0.jar           # Kafka client libraries
+├── mysql-connector-j-9.3.0.jar       # MySQL JDBC driver
+└── spark-sql-kafka-0-10_2.12-3.5.0.jar # Spark-Kafka integration
+```
 
-### 🏗️ Multi-Layer Architecture
+### Manual JAR Download (if needed)
+If the JARs are not automatically downloaded, you can get them from:
 
-**Bronze Layer (`stream-bronze.py`)**:
-- Raw CDC events with full audit trail
-- Preserves all database changes
-- Includes operation type and timestamps
+1. **Maven Central Repository**: https://mvnrepository.com/
+2. **Apache Spark**: https://spark.apache.org/downloads.html
+3. **Azure Storage**: https://github.com/Azure/azure-storage-java
 
-**Silver Layer (`stream-silver.py`)**:  
-- Deduplicated operational data
-- Cleaned and validated records
-- Business-ready datasets
+Place all JAR files in both:
+- `scripts/jars/` (main location)
+- `scripts/streaming/jars/` (streaming-specific copy)
 
-**Gold Layer (`stream-gold.py`)**:
-- Aggregated analytics datasets
-- SCD Type 4 dimension tracking
-- Pre-computed metrics
-
-### ⚡ Smart Partitioning
-Automatic partitioning based on data volume:
-- Small datasets: Single file
-- Medium datasets: 2-4 files
-- Large datasets: Up to 10 files
-
-### 🔧 Production Features
-- Automatic cache management
-- Error recovery and retry logic
-- Configurable checkpoint locations
-- Background process monitoring
+**Note**: JAR files are excluded from Git tracking (see `.gitignore`) to keep the repository clean.
 
 ---
 
