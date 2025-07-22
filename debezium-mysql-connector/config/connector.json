@@ -2,7 +2,7 @@
   "name": "mysql-connector",
   "config": {
     "connector.class": "io.debezium.connector.mysql.MySqlConnector",
-    "database.hostname": "192.168.199.13",
+    "database.hostname": "192.168.1.18",
     "database.port": "3306",
     "database.user": "root",
     "database.password": ".Tldccmcbtldck2",

@@ -2,6 +2,7 @@ import os
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import from_json, col, current_timestamp, when
 from pyspark.sql.types import StructType, StructField, IntegerType, StringType, TimestampType, DecimalType
+from delta import *
 
 def create_spark_session():
     # Set up local JAR paths for Azure storage components
@@ -21,16 +22,37 @@ def create_spark_session():
     existing_jars = [jar for jar in azure_jars if os.path.exists(jar)]
     jar_path = ",".join(existing_jars)
     
+    # Create dedicated directories for Spark
+    import tempfile
+    
+    # Create persistent temp directories
+    spark_temp_dir = "/tmp/spark-workspace"
+    checkpoint_dir = "/tmp/spark-checkpoints"
+    
+    os.makedirs(spark_temp_dir, exist_ok=True)
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    
     return (SparkSession.builder
-            .appName("CDC to Silver Layer - Standalone")
+            .appName("CDC to Bronze Delta Layer")
             .config("spark.jars", jar_path)  # Use local JARs for Azure storage
-            .config("spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0")  # Use package for Kafka
+            .config("spark.jars.packages", 
+                   "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,"
+                   "io.delta:delta-spark_2.12:3.0.0")  # Updated Delta Lake package
+            .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+            .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
             .config("spark.hadoop.fs.azure", "org.apache.hadoop.fs.azure.NativeAzureFileSystem")
-            .config("spark.hadoop.fs.azure.account.key.mysilver.dfs.core.windows.net",
-                   "bAthp0pVBfqEtyCvJElSX7MeI7ejSLa6cjuPoMz0Gg/69uzEW01y4URMDXsdFCrkpc9M54cDHnXs+AStj1gExQ==")
-            .config("spark.sql.streaming.checkpointLocation", "/tmp/checkpoints")
+            .config("spark.hadoop.fs.azure.account.key.mybronze.dfs.core.windows.net",
+                   "c5etqTidViezB/4ukOAALy23HeMBsJJ8g+2nFaIdbC7E9PhLw0y2YIA1ItjutpqS1/8Ga8fw40mR+ASt2T+/sw==")
+            .config("spark.sql.streaming.checkpointLocation", checkpoint_dir)
             .config("spark.sql.streaming.minBatchesToRetain", "10")
             .config("spark.sql.streaming.pollingDelay", "1s")
+            .config("spark.local.dir", spark_temp_dir)
+            .config("spark.sql.adaptive.enabled", "true")
+            .config("spark.sql.adaptive.coalescePartitions.enabled", "true")
+            .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+            .config("spark.kryo.unsafe", "false")
+            .config("spark.databricks.delta.schema.autoMerge.enabled", "true")  # Allow schema evolution
+            .config("spark.sql.parquet.enableVectorizedReader", "false")  # Disable vectorized reader to avoid type conflicts
             .config("spark.master", "local[*]")  # Run locally with all available cores
             .getOrCreate())
 
@@ -39,8 +61,8 @@ def create_spark_session():
 # Base structure for common fields
 def create_base_fields():
     return [
-        StructField("CreatedAt", StringType(), True),
-        StructField("UpdatedAt", StringType(), True)
+        StructField("CreatedAt", StringType(), True),  # Debezium sends timestamps as strings
+        StructField("UpdatedAt", StringType(), True)   # Debezium sends timestamps as strings
     ]
 
 # Customers schema
@@ -229,7 +251,6 @@ debezium_payments_schema = StructType([
     ]), True)
 ])
 
-
 # Schema mapping for all tables
 table_schemas = {
     "Customers": debezium_customer_schema,
@@ -246,25 +267,24 @@ table_schemas = {
 def read_from_kafka(spark, kafka_topic, stream_type="default"):
     """
     Read from Kafka with different checkpoint locations for different stream types
-    stream_type: 'silver-final' for CDC processing to silver layer
     """
     return (spark.readStream
             .format("kafka")
-            .option("kafka.bootstrap.servers", "localhost:9093") # Spark local, if Spark in container use kafka:9093
+            .option("kafka.bootstrap.servers", "localhost:9093")
             .option("subscribe", kafka_topic)
-            .option("startingOffsets", "latest")  # Only process NEW messages after starting
-            .option("failOnDataLoss", "false")  # Don't fail if some data is lost
+            .option("startingOffsets", "latest")
+            .option("failOnDataLoss", "false")
             .load())
 
 def clear_checkpoints_if_needed(table_name, clear_checkpoints=False):
     """
-    Clear checkpoint directories if requested - updated for silver-final
+    Clear checkpoint directories if requested
     """
     if clear_checkpoints:
         import shutil
-        silver_final_checkpoint = f"/tmp/checkpoints/cdc_silver_{table_name}"
+        delta_checkpoint = f"/tmp/spark-checkpoints/delta_{table_name}"
         
-        for checkpoint_path in [silver_final_checkpoint]:
+        for checkpoint_path in [delta_checkpoint]:
             try:
                 if os.path.exists(checkpoint_path):
                     shutil.rmtree(checkpoint_path)
@@ -272,38 +292,10 @@ def clear_checkpoints_if_needed(table_name, clear_checkpoints=False):
             except Exception as e:
                 print(f"[WARNING] Could not clear checkpoint {checkpoint_path}: {e}")
 
-def smart_partitioning_write(df, path, table_name):
+def process_cdc_to_delta_table(df, delta_path, table_name, schema=None, spark=None, recreate_tables=False):
     """
-    Intelligently partition data based on size to balance between 
-    file count and performance
-    """
-    record_count = df.count()
-    
-    # Define partitioning strategy
-    if record_count < 50000:
-        # Small data: single file
-        partitions = 1
-        strategy = "Single file (small dataset)"
-    elif record_count < 500000:
-        # Medium data: 2-4 files  
-        partitions = min(4, max(2, record_count // 100000))
-        strategy = f"Medium dataset: {partitions} files"
-    else:
-        # Large data: more partitions, but cap at reasonable number
-        partitions = min(10, max(4, record_count // 200000))
-        strategy = f"Large dataset: {partitions} files"
-    
-    print(f"[PARTITION] {table_name}: {record_count:,} records -> {strategy}")
-    
-    # Apply partitioning and write
-    partitioned_df = df.coalesce(partitions)
-    partitioned_df.write.mode("overwrite").format("parquet").save(path)
-    
-    return partitions
-
-def process_cdc_to_table(df, silver_final_path, table_name, schema=None, spark=None):
-    """
-    Process CDC events and apply them to the silver-final table with smart partitioning
+    Process CDC events and apply them to Delta Lake table using MERGE operations
+    This is MUCH more efficient than overwriting entire files!
     """
     # Select value from Kafka, cast string
     df_processed = (df.selectExpr("CAST(value AS STRING) as json_data", 
@@ -317,16 +309,13 @@ def process_cdc_to_table(df, silver_final_path, table_name, schema=None, spark=N
             if batch_df.count() == 0:
                 return
             
-            # Clear cache at the beginning of each batch to prevent stale file references
-            spark.catalog.clearCache()
-            print(f"[DEBUG] Cleared Spark cache for batch {batch_id}")
+            print(f"[DEBUG] Processing batch {batch_id} with {batch_df.count()} events")
             
             # CRITICAL: Sort batch by timestamp to ensure chronological processing
-            # This ensures INSERT -> UPDATE -> DELETE order even if Kafka delivers out of order
             batch_df = batch_df.orderBy(col("parsed.payload.ts_ms").asc())
             print(f"[DEBUG] Ordered batch {batch_id} by timestamp for chronological processing")
                 
-            # Extract CDC data based on table type - exclude operation, kafka_timestamp, ingestion_timestamp
+            # Extract CDC data based on table type
             if table_name == "Customers":
                 cdc_df = batch_df.select(
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.CustomerID")).otherwise(col("parsed.payload.before.CustomerID")).alias("CustomerID"),
@@ -336,8 +325,8 @@ def process_cdc_to_table(df, silver_final_path, table_name, schema=None, spark=N
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.CreatedAt")).otherwise(col("parsed.payload.before.CreatedAt")).alias("CreatedAt"),
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.UpdatedAt")).otherwise(col("parsed.payload.before.UpdatedAt")).alias("UpdatedAt"),
                     col("parsed.payload.op").alias("operation"),
-                    col("parsed.payload.ts_ms").alias("event_timestamp")  # Preserve timestamp for ordering
-                ).orderBy(col("event_timestamp").asc())  # Maintain chronological order
+                    col("parsed.payload.ts_ms").alias("event_timestamp")
+                ).orderBy(col("event_timestamp").asc())
             elif table_name == "Sellers":
                 cdc_df = batch_df.select(
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.SellerID")).otherwise(col("parsed.payload.before.SellerID")).alias("SellerID"),
@@ -347,8 +336,8 @@ def process_cdc_to_table(df, silver_final_path, table_name, schema=None, spark=N
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.CreatedAt")).otherwise(col("parsed.payload.before.CreatedAt")).alias("CreatedAt"),
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.UpdatedAt")).otherwise(col("parsed.payload.before.UpdatedAt")).alias("UpdatedAt"),
                     col("parsed.payload.op").alias("operation"),
-                    col("parsed.payload.ts_ms").alias("event_timestamp")  # Preserve timestamp for ordering
-                ).orderBy(col("event_timestamp").asc())  # Maintain chronological order
+                    col("parsed.payload.ts_ms").alias("event_timestamp")
+                ).orderBy(col("event_timestamp").asc())
             elif table_name == "ProductCategories":
                 cdc_df = batch_df.select(
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.CategoryID")).otherwise(col("parsed.payload.before.CategoryID")).alias("CategoryID"),
@@ -357,8 +346,8 @@ def process_cdc_to_table(df, silver_final_path, table_name, schema=None, spark=N
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.CreatedAt")).otherwise(col("parsed.payload.before.CreatedAt")).alias("CreatedAt"),
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.UpdatedAt")).otherwise(col("parsed.payload.before.UpdatedAt")).alias("UpdatedAt"),
                     col("parsed.payload.op").alias("operation"),
-                    col("parsed.payload.ts_ms").alias("event_timestamp")  # Preserve timestamp for ordering
-                ).orderBy(col("event_timestamp").asc())  # Maintain chronological order
+                    col("parsed.payload.ts_ms").alias("event_timestamp")
+                ).orderBy(col("event_timestamp").asc())
             elif table_name == "Products":
                 cdc_df = batch_df.select(
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.ProductID")).otherwise(col("parsed.payload.before.ProductID")).alias("ProductID"),
@@ -371,8 +360,8 @@ def process_cdc_to_table(df, silver_final_path, table_name, schema=None, spark=N
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.CreatedAt")).otherwise(col("parsed.payload.before.CreatedAt")).alias("CreatedAt"),
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.UpdatedAt")).otherwise(col("parsed.payload.before.UpdatedAt")).alias("UpdatedAt"),
                     col("parsed.payload.op").alias("operation"),
-                    col("parsed.payload.ts_ms").alias("event_timestamp")  # Preserve timestamp for ordering
-                ).orderBy(col("event_timestamp").asc())  # Maintain chronological order
+                    col("parsed.payload.ts_ms").alias("event_timestamp")
+                ).orderBy(col("event_timestamp").asc())
             elif table_name == "OrderStatus":
                 cdc_df = batch_df.select(
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.StatusID")).otherwise(col("parsed.payload.before.StatusID")).alias("StatusID"),
@@ -381,8 +370,8 @@ def process_cdc_to_table(df, silver_final_path, table_name, schema=None, spark=N
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.CreatedAt")).otherwise(col("parsed.payload.before.CreatedAt")).alias("CreatedAt"),
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.UpdatedAt")).otherwise(col("parsed.payload.before.UpdatedAt")).alias("UpdatedAt"),
                     col("parsed.payload.op").alias("operation"),
-                    col("parsed.payload.ts_ms").alias("event_timestamp")  # Preserve timestamp for ordering
-                ).orderBy(col("event_timestamp").asc())  # Maintain chronological order
+                    col("parsed.payload.ts_ms").alias("event_timestamp")
+                ).orderBy(col("event_timestamp").asc())
             elif table_name == "Orders":
                 cdc_df = batch_df.select(
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.OrderID")).otherwise(col("parsed.payload.before.OrderID")).alias("OrderID"),
@@ -393,8 +382,8 @@ def process_cdc_to_table(df, silver_final_path, table_name, schema=None, spark=N
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.CreatedAt")).otherwise(col("parsed.payload.before.CreatedAt")).alias("CreatedAt"),
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.UpdatedAt")).otherwise(col("parsed.payload.before.UpdatedAt")).alias("UpdatedAt"),
                     col("parsed.payload.op").alias("operation"),
-                    col("parsed.payload.ts_ms").alias("event_timestamp")  # Preserve timestamp for ordering
-                ).orderBy(col("event_timestamp").asc())  # Maintain chronological order
+                    col("parsed.payload.ts_ms").alias("event_timestamp")
+                ).orderBy(col("event_timestamp").asc())
             elif table_name == "OrderItems":
                 cdc_df = batch_df.select(
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.OrderItemID")).otherwise(col("parsed.payload.before.OrderItemID")).alias("OrderItemID"),
@@ -405,8 +394,8 @@ def process_cdc_to_table(df, silver_final_path, table_name, schema=None, spark=N
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.CreatedAt")).otherwise(col("parsed.payload.before.CreatedAt")).alias("CreatedAt"),
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.UpdatedAt")).otherwise(col("parsed.payload.before.UpdatedAt")).alias("UpdatedAt"),
                     col("parsed.payload.op").alias("operation"),
-                    col("parsed.payload.ts_ms").alias("event_timestamp")  # Preserve timestamp for ordering
-                ).orderBy(col("event_timestamp").asc())  # Maintain chronological order
+                    col("parsed.payload.ts_ms").alias("event_timestamp")
+                ).orderBy(col("event_timestamp").asc())
             elif table_name == "Reasons":
                 cdc_df = batch_df.select(
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.ReasonID")).otherwise(col("parsed.payload.before.ReasonID")).alias("ReasonID"),
@@ -416,8 +405,8 @@ def process_cdc_to_table(df, silver_final_path, table_name, schema=None, spark=N
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.CreatedAt")).otherwise(col("parsed.payload.before.CreatedAt")).alias("CreatedAt"),
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.UpdatedAt")).otherwise(col("parsed.payload.before.UpdatedAt")).alias("UpdatedAt"),
                     col("parsed.payload.op").alias("operation"),
-                    col("parsed.payload.ts_ms").alias("event_timestamp")  # Preserve timestamp for ordering
-                ).orderBy(col("event_timestamp").asc())  # Maintain chronological order
+                    col("parsed.payload.ts_ms").alias("event_timestamp")
+                ).orderBy(col("event_timestamp").asc())
             elif table_name == "Payments":
                 cdc_df = batch_df.select(
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.PaymentID")).otherwise(col("parsed.payload.before.PaymentID")).alias("PaymentID"),
@@ -427,10 +416,11 @@ def process_cdc_to_table(df, silver_final_path, table_name, schema=None, spark=N
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.CreatedAt")).otherwise(col("parsed.payload.before.CreatedAt")).alias("CreatedAt"),
                     when(col("parsed.payload.after").isNotNull(), col("parsed.payload.after.UpdatedAt")).otherwise(col("parsed.payload.before.UpdatedAt")).alias("UpdatedAt"),
                     col("parsed.payload.op").alias("operation"),
-                    col("parsed.payload.ts_ms").alias("event_timestamp")  # Preserve timestamp for ordering
-                ).orderBy(col("event_timestamp").asc())  # Maintain chronological order
+                    col("parsed.payload.ts_ms").alias("event_timestamp")
+                ).orderBy(col("event_timestamp").asc())
             else:
-                return  # Skip unknown tables
+                print(f"[WARNING] Table {table_name} not yet implemented for Delta processing")
+                return
             
             # Get primary key column name for each table
             pk_columns = {
@@ -447,171 +437,240 @@ def process_cdc_to_table(df, silver_final_path, table_name, schema=None, spark=N
             
             pk_col = pk_columns.get(table_name)
             if not pk_col:
+                print(f"[ERROR] No primary key defined for table {table_name}")
                 return
             
-            # Ensure cdc_df is initialized
-            if 'cdc_df' not in locals():
-                return
-            
-            # Process each operation type - initialize outside try block
-            inserts = cdc_df.filter(col("operation") == "c")  # CREATE
-            updates = cdc_df.filter(col("operation") == "u")  # UPDATE
-            deletes = cdc_df.filter(col("operation") == "d")  # DELETE
-                
             try:
-                # Check if silver-final path has any parquet files
+                # Process each operation type in chronological order
+                inserts = cdc_df.filter(col("operation") == "c").drop("operation", "event_timestamp")
+                updates = cdc_df.filter(col("operation") == "u").drop("operation", "event_timestamp")
+                deletes = cdc_df.filter(col("operation") == "d").select(pk_col)
+                
+                # Check if Delta table exists
+                from delta.tables import DeltaTable
+                
                 try:
-                    # First try to read the entire directory (for initial data)
-                    existing_df = spark.read.format("parquet").load(silver_final_path)
+                    delta_table = DeltaTable.forPath(spark, delta_path)
                     table_exists = True
+                    current_count = delta_table.toDF().count()
+                    print(f"[DELTA] Found existing Delta table at {delta_path} with {current_count} records")
+                    
+                    # Check if we should recreate the table
+                    if recreate_tables:
+                        print(f"[WARNING] RECREATE_DELTA_TABLES=True - This will DELETE {current_count} existing records in {table_name}!")
+                        if current_count > 0:
+                            print(f"[SAFETY] Table {table_name} has {current_count} records that will be lost!")
+                            print(f"[SAFETY] If this includes your initial batch data, you should set RECREATE_DELTA_TABLES=False")
+                            # Uncomment these lines if you want a safety delay
+                            # print("[SAFETY] Sleeping 5 seconds to allow cancellation...")
+                            # import time
+                            # time.sleep(5)
+                        
+                        # Delete existing data and recreate
+                        delta_table.delete("1=1")  # Delete all records
+                        table_exists = False  # Treat as new table
+                        print(f"[DELTA] Recreated Delta table {table_name} - all existing data deleted")
+                    else:
+                        print(f"[SAFE] Preserving existing {table_name} table with {current_count} records")
+                        
                 except Exception:
-                    try:
-                        # If that fails, try to read only part-* files (for previously processed CDC data)
-                        existing_df = spark.read.format("parquet").load(f"{silver_final_path}/part-*")
-                        table_exists = True
-                    except Exception:
-                        # No parquet files exist, table doesn't exist yet
-                        table_exists = False
-                        existing_df = None
-
+                    table_exists = False
+                    print(f"[DELTA] Creating new Delta table at {delta_path}")
+                
                 if table_exists:
-                    # Start with existing data and CACHE it to prevent race conditions
-                    result_df = existing_df.cache()  # Cache to materialize the data
-                    print(f"[DEBUG] Cached existing data for {table_name}: {result_df.count()} records")
-
-                    # CHRONOLOGICAL ORDER: Process events in the order they happened
-                    # 1. Handle inserts first (oldest events): add new records
+                    # EFFICIENT DELTA OPERATIONS - No full table rewrites!
+                    
+                    # 1. Handle INSERTS using Delta MERGE (upsert)
                     if inserts.count() > 0:
-                        inserts_clean = inserts.drop("operation", "event_timestamp")
-                        result_df = result_df.union(inserts_clean)
-
-                    # 2. Handle updates second (middle events): remove old records and add updated ones
+                        print(f"[DELTA] Merging {inserts.count()} inserts")
+                        delta_table.alias("target").merge(
+                            inserts.alias("source"),
+                            f"target.{pk_col} = source.{pk_col}"
+                        ).whenMatchedUpdateAll()\
+                         .whenNotMatchedInsertAll()\
+                         .execute()
+                    
+                    # 2. Handle UPDATES using Delta MERGE
                     if updates.count() > 0:
-                        update_ids = updates.select(pk_col).collect()
-                        update_values = [row[pk_col] for row in update_ids]
-                        result_df = result_df.filter(~col(pk_col).isin(update_values))
-                        # Add updated records (remove operation and event_timestamp columns)
-                        updates_clean = updates.drop("operation", "event_timestamp")
-                        result_df = result_df.union(updates_clean)
-
-                    # 3. Handle deletes last (newest events): remove records
+                        print(f"[DELTA] Merging {updates.count()} updates")
+                        delta_table.alias("target").merge(
+                            updates.alias("source"),
+                            f"target.{pk_col} = source.{pk_col}"
+                        ).whenMatchedUpdateAll()\
+                         .execute()
+                    
+                    # 3. Handle DELETES using Delta DELETE
                     if deletes.count() > 0:
-                        delete_ids = deletes.select(pk_col).collect()
-                        delete_values = [row[pk_col] for row in delete_ids]
-                        result_df = result_df.filter(~col(pk_col).isin(delete_values))
-
-                    # Use smart partitioning instead of fixed coalesce(1)
-                    partitions_used = smart_partitioning_write(result_df, silver_final_path, table_name)
-                    
-                    # Unpersist the cached DataFrame to free memory
-                    existing_df.unpersist()
-                    
-                    # Clear cache after writing to prevent stale references
-                    spark.catalog.clearCache()
-                    
-                    print(f"[CDC] Applied {batch_df.count()} changes to {table_name} in silver-final (Total records: {result_df.count()}) - {partitions_used} parquet file(s)")
+                        print(f"[DELTA] Deleting {deletes.count()} records")
+                        delete_condition = " OR ".join([f"{pk_col} = {row[pk_col]}" for row in deletes.collect()])
+                        delta_table.delete(delete_condition)
+                        
                 else:
-                    # Table doesn't exist, create it with inserts/updates only
+                    # Create new Delta table with initial data (inserts + updates only)
                     if inserts.count() > 0 or updates.count() > 0:
-                        new_records = inserts.union(updates) if inserts.count() > 0 and updates.count() > 0 else (inserts if inserts.count() > 0 else updates)
-                        new_records_clean = new_records.drop("operation", "event_timestamp")
-                        # Use smart partitioning for new tables too
-                        partitions_used = smart_partitioning_write(new_records_clean, silver_final_path, table_name)
-                        
-                        # Clear cache after creating new table
-                        spark.catalog.clearCache()
-                        
-                        print(f"[CDC] Created new table {table_name} in silver-final with {new_records_clean.count()} records - {partitions_used} parquet file(s)")
+                        initial_data = inserts.union(updates) if inserts.count() > 0 and updates.count() > 0 else (inserts if inserts.count() > 0 else updates)
+                        initial_data.write.format("delta").mode("overwrite").save(delta_path)
+                        print(f"[DELTA] Created new Delta table {table_name} with {initial_data.count()} records")
+                
+                # Get final record count
+                final_table = DeltaTable.forPath(spark, delta_path)
+                final_count = final_table.toDF().count()
+                print(f"[DELTA] {table_name} now has {final_count} total records")
                 
             except Exception as e:
-                print(f"[ERROR] Failed to process table {table_name}: {e}")
-                # If there's any other error, try to create table with inserts/updates only
-                if inserts.count() > 0 or updates.count() > 0:
-                    new_records = inserts.union(updates) if inserts.count() > 0 and updates.count() > 0 else (inserts if inserts.count() > 0 else updates)
-                    new_records_clean = new_records.drop("operation", "event_timestamp")
-                    # Use smart partitioning for error recovery too
-                    partitions_used = smart_partitioning_write(new_records_clean, silver_final_path, table_name)
-                    
-                    # Clear cache after error recovery write
-                    spark.catalog.clearCache()
-                    
-                    print(f"[CDC] Created new table {table_name} in silver-final with {new_records_clean.count()} records - {partitions_used} parquet file(s)")
+                print(f"[ERROR] Delta operation failed for {table_name}: {e}")
+                import traceback
+                traceback.print_exc()
     
         # Write stream using foreachBatch
         query = (df_parsed.writeStream
                 .foreachBatch(process_batch)
                 .trigger(processingTime="10 seconds")
-                .option("checkpointLocation", f"/tmp/checkpoints/cdc_silver_{silver_final_path.split('/')[-1]}")
+                .option("checkpointLocation", f"/tmp/spark-checkpoints/delta_{table_name}")
                 .start())
         
         return query
     
     return None
 
+def check_existing_delta_tables(spark, storage_account_bronze, bronze_delta, tables_to_check):
+    """
+    Check if Delta tables already exist and show their record counts
+    This helps you see if you have initial batch data that could be lost
+    """
+    print("\n" + "="*60)
+    print("DELTA TABLE STATUS CHECK")
+    print("="*60)
+    
+    existing_tables = {}
+    for table_name in tables_to_check:
+        delta_path = f"abfss://{bronze_delta}@{storage_account_bronze}.dfs.core.windows.net/{table_name}"
+        try:
+            from delta.tables import DeltaTable
+            delta_table = DeltaTable.forPath(spark, delta_path)
+            record_count = delta_table.toDF().count()
+            existing_tables[table_name] = record_count
+            print(f"✅ {table_name}: {record_count} records")
+        except Exception as e:
+            existing_tables[table_name] = 0
+            print(f"❌ {table_name}: Table does not exist")
+    
+    total_records = sum(existing_tables.values())
+    print("-" * 60)
+    print(f"TOTAL EXISTING RECORDS: {total_records}")
+    
+    if total_records > 0:
+        print("\n⚠️  WARNING: You have existing data in Delta tables!")
+        print("If RECREATE_DELTA_TABLES=True, ALL this data will be DELETED!")
+        print("This likely includes your initial batch-loaded data.")
+        print("Set RECREATE_DELTA_TABLES=False to preserve existing data.")
+    else:
+        print("\n✅ No existing data found - safe to recreate tables")
+        
+    print("="*60 + "\n")
+    return existing_tables
+
 def main():
-    # Create Spark session
+    # Create Spark session with Delta Lake support
     spark = create_spark_session()
     
-    # Configure Azure storage
-    storage_account_silver = "mysilver"
-    silver_final = "silver-final"
-    
-    # Set Azure credentials
-    spark.conf.set(
-        "fs.azure.account.key.mysilver.dfs.core.windows.net",
-        "bAthp0pVBfqEtyCvJElSX7MeI7ejSLa6cjuPoMz0Gg/69uzEW01y4URMDXsdFCrkpc9M54cDHnXs+AStj1gExQ=="
-    )
-    
-    # OPTION: Set to True if you want to clear checkpoints and start fresh
-    # This ensures only NEW CDC events after starting the code are processed
-    CLEAR_CHECKPOINTS = True  # Set to False to resume from where you left off
-    
-    if CLEAR_CHECKPOINTS:
-        print("[CONFIG] Starting with fresh checkpoints - only NEW CDC events will be processed")
-    else:
-        print("[CONFIG] Resuming from existing checkpoints - may process some old events")
-    
-    # List of topics 
-    topics = [
-        "online_store.online_store.Customers",
-        "online_store.online_store.Sellers",
-        "online_store.online_store.ProductCategories", 
-        "online_store.online_store.Products",
-        "online_store.online_store.OrderStatus",
-        "online_store.online_store.Orders",
-        "online_store.online_store.OrderItems",
-        "online_store.online_store.Reasons",
-        "online_store.online_store.Payments",
-    ]
-    
-    # Start streaming for each topic
-    queries = []
-    for topic in topics:
-        # Extract table name from topic
-        table_name = topic.split(".")[-1]
-        silver_final_path = f"abfss://{silver_final}@{storage_account_silver}.dfs.core.windows.net/{table_name}"
+    try:
+        # Configure Azure storage for Delta tables
+        storage_account_bronze = "mybronze"
+        bronze_delta = "bronze-delta"
         
-        # Clear checkpoints if requested (ensures fresh start)
-        clear_checkpoints_if_needed(table_name, CLEAR_CHECKPOINTS)
+        # Set Azure credentials
+        spark.conf.set(
+            "fs.azure.account.key.mybronze.dfs.core.windows.net",
+            "c5etqTidViezB/4ukOAALy23HeMBsJJ8g+2nFaIdbC7E9PhLw0y2YIA1ItjutpqS1/8Ga8fw40mR+ASt2T+/sw=="
+        )
         
-        # Get schema for this table
-        schema = table_schemas.get(table_name)
+        # OPTION: Set to True if you want to clear checkpoints and start fresh
+        CLEAR_CHECKPOINTS = False  # Changed to False to avoid re-processing old events
+        # OPTION: Set to True ONLY if you want to delete existing Delta tables and recreate them
+        # WARNING: This will DELETE ALL your batch-loaded initial data!
+        RECREATE_DELTA_TABLES = False  # Changed to False to preserve existing data
         
-        # Process CDC events and apply to silver-final table
-        kafka_df_cdc = read_from_kafka(spark, topic, "silver-final")
-        query_cdc = process_cdc_to_table(kafka_df_cdc, silver_final_path, table_name, schema, spark)
-        if query_cdc:
-            print(f"[READY] Processing CDC events for table: {table_name} to silver-final at {silver_final_path}")
-            queries.append(query_cdc)
-    
-    # Wait for all queries to terminate
-    for query in queries:
-        query.awaitTermination()
+        if CLEAR_CHECKPOINTS:
+            print("[CONFIG] Starting with fresh checkpoints - only NEW CDC events will be processed")
+        else:
+            print("[CONFIG] Resuming from existing checkpoints - may process some old events")
+            
+        if RECREATE_DELTA_TABLES:
+            print("[WARNING] Will recreate Delta tables if they exist - THIS WILL DELETE YOUR INITIAL BATCH DATA!")
+            # Safety confirmation - uncomment if you really want this behavior
+            # print("[SAFETY] Sleeping 10 seconds - press Ctrl+C to cancel if this was a mistake...")
+            # import time
+            # time.sleep(10)
+        else:
+            print("[SAFE] Preserving existing Delta tables - will only add new CDC events")
+        
+        # List of topics to process
+        topics = [
+            "online_store.online_store.Customers",
+            "online_store.online_store.Sellers", 
+            "online_store.online_store.Products",
+            # Add more tables as needed
+        ]
+        
+        # Extract table names for checking
+        table_names = [topic.split(".")[-1] for topic in topics]
+        
+        # SAFETY CHECK: Check existing Delta tables before proceeding
+        existing_data = check_existing_delta_tables(spark, storage_account_bronze, bronze_delta, table_names)
+        
+        # Additional safety check
+        total_existing = sum(existing_data.values())
+        if RECREATE_DELTA_TABLES and total_existing > 0:
+            print(f"\n🚨 DANGER: RECREATE_DELTA_TABLES=True will delete {total_existing} existing records!")
+            print("This will permanently destroy your initial batch data!")
+            print("To cancel: Press Ctrl+C now")
+            print("To preserve data: Set RECREATE_DELTA_TABLES=False in the code")
+            print("\nContinuing in 10 seconds...")
+            import time
+            time.sleep(10)
+        
+        # Start streaming for each topic
+        queries = []
+        for topic in topics:
+            # Extract table name from topic
+            table_name = topic.split(".")[-1]
+            delta_path = f"abfss://{bronze_delta}@{storage_account_bronze}.dfs.core.windows.net/{table_name}"
+            
+            # Clear checkpoints if requested
+            clear_checkpoints_if_needed(table_name, CLEAR_CHECKPOINTS)
+            
+            # Get schema for this table
+            schema = table_schemas.get(table_name)
+            
+            # Process CDC events to Delta table
+            kafka_df = read_from_kafka(spark, topic, "delta")
+            query = process_cdc_to_delta_table(kafka_df, delta_path, table_name, schema, spark, RECREATE_DELTA_TABLES)
+            if query:
+                print(f"[READY] Processing CDC events for table: {table_name} to Delta at {delta_path}")
+                queries.append(query)
+        
+        # Wait for all queries to terminate
+        for query in queries:
+            query.awaitTermination()
+            
+    except KeyboardInterrupt:
+        print("\n[SHUTDOWN] Received interrupt signal, stopping streams...")
+        for query in queries:
+            query.stop()
+        print("[SHUTDOWN] All streams stopped")
+    except Exception as e:
+        print(f"[ERROR] Main execution failed: {e}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        print("[CLEANUP] Stopping Spark session...")
+        spark.stop()
+        print("[CLEANUP] Spark session stopped")
 
 if __name__ == "__main__":
     main()
     
     # Manual checkpoint cleanup commands (if needed):
-    # rm -rf /tmp/checkpoints/cdc_silver_Customers
-    # rm -rf /tmp/checkpoints/cdc_silver_Sellers
-    # rm -rf /tmp/checkpoints/cdc_silver_Products
+    # rm -rf /tmp/spark-checkpoints/delta_*
+    # Or run: python3 setup_directories.py

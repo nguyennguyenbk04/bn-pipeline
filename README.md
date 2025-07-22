@@ -1,13 +1,15 @@
 
 
-# Real-time MySQL to Azure Data Lake E-commerce Pipeline
+# Real-time MySQL to Azure Data Lake E-commerce Pipeline with Delta Lake
 
-A complete real-time data pipeline that captures MySQL database changes and streams them to Azure Data Lake using **Debezium CDC**, **Apache Kafka**, and **Apache Spark**. Features chronological event processing across Bronze, Silver, and Gold layers for robust data consistency.
+A complete real-time data pipeline that captures MySQL database changes and streams them to Azure Data Lake using **Debezium CDC**, **Apache Kafka**, **Apache Spark**, and **Delta Lake**. Features ACID transactions, time travel, and chronological event processing across Bronze, Silver, and Gold layers for enterprise-grade data consistency.
 
 **Key Features:**
-- Real-time CDC from MySQL to Azure Data Lake (Bronze/Silver/Gold layers)
+- Real-time CDC from MySQL to Azure Data Lake with **Delta Lake format**
+- **ACID transactions** and **time travel** capabilities
 - Chronological event processing (INSERT → UPDATE → DELETE order)
-- Multi-layer architecture with smart partitioning
+- Multi-layer Delta Lake architecture (Bronze/Silver/Gold)
+- **SCD Type 4** dimension tables with change history tracking
 - Dockerized infrastructure (MySQL, Kafka, Zookeeper, Debezium)
 - Production-ready e-commerce schema with sample data
 
@@ -19,17 +21,17 @@ A complete real-time data pipeline that captures MySQL database changes and stre
 MySQL Database (OLTP)
     ↓ (Debezium CDC)
 Apache Kafka
-    ↓ (Spark Streaming)
+    ↓ (Spark Streaming + Delta Lake)
 Azure Data Lake Storage Gen2
-    ├── Bronze Layer (Raw CDC events)
-    ├── Silver Layer (Cleaned data)
-    └── Gold Layer (Analytics-ready)
+    ├── Bronze-Delta Layer (Raw CDC events with ACID)
+    ├── Silver-Delta Layer (Cleaned data with versioning)
+    └── Gold-Delta Layer (SCD Type 4 dimensions with history)
 ```
 
 **Pipeline Stages:**
-1. **Bronze Layer**: Raw CDC events with full audit trail
-2. **Silver Layer**: Cleaned, deduplicated operational data  
-3. **Gold Layer**: Aggregated, analytics-ready datasets
+1. **Bronze-Delta Layer**: Raw CDC events with ACID transactions and audit trail
+2. **Silver-Delta Layer**: Cleaned, deduplicated operational data with schema evolution  
+3. **Gold-Delta Layer**: SCD Type 4 dimensions with change history and time travel
 
 ---
 
@@ -59,6 +61,7 @@ Azure Data Lake Storage Gen2
 
 4. **Azure Data Lake Storage Gen2**
    - Create storage accounts: `mybronze`, `mysilver`, `mygold`
+   - Create containers: `bronze-delta`, `silver-delta`, `gold-delta`
    - Update credentials in streaming scripts
 
 5. **Install Dependencies**
@@ -100,20 +103,28 @@ bash start_debezium.sh
 
 ### 5. Start Real-time Streaming (Choose your layer)
 
-**Bronze Layer** (Raw CDC events):
+**Bronze-Delta Layer** (Raw CDC events with ACID transactions):
+```bash
+cd ../scripts/streaming-delta
+python stream-bronze-delta.py
+```
+
+**Silver-Delta Layer** (Cleaned operational data with versioning):
+```bash
+python stream-silver-delta.py
+```
+
+**Gold-Delta Layer** (SCD Type 4 dimensions with change history):
+```bash
+python stream-gold-delta.py
+```
+
+**Legacy Parquet Streaming** (if needed):
 ```bash
 cd ../scripts/streaming
-python stream-bronze.py
-```
-
-**Silver Layer** (Cleaned operational data):
-```bash
-python stream-silver.py
-```
-
-**Gold Layer** (Analytics aggregations):
-```bash
-python stream-gold.py
+python stream-bronze.py  # Parquet format
+python stream-silver.py  # Parquet format
+python stream-gold.py    # Parquet format
 ```
 
 ### 6. Test the Pipeline
@@ -121,13 +132,17 @@ python stream-gold.py
 -- Connect to MySQL and make changes
 docker exec -it debezium-mysql-connector-mysql-1 mysql -u root -prootpassword online_store
 
--- Test chronological processing
+-- Test chronological processing with Delta Lake ACID transactions
 INSERT INTO Customers (Name, Email, PhoneNumber) VALUES ('Test User', 'test@example.com', '555-0123');
 UPDATE Customers SET Name = 'Updated User' WHERE Email = 'test@example.com';
 DELETE FROM Customers WHERE Email = 'test@example.com';
 ```
 
-Watch the streaming logs to see events processed in chronological order!
+Watch the streaming logs to see:
+- **ACID transactions** in action
+- Events processed in chronological order
+- **Delta Lake MERGE operations** for efficient updates
+- **Time travel** capabilities for data versioning
 
 ---
 
@@ -144,14 +159,25 @@ DE_project/
 │   ├── dw_design.sql             # Data warehouse schema
 │   └── fake_db.py                # Data generation utilities
 ├── scripts/
-│   ├── streaming/                 # Real-time processing
-│   │   ├── stream-bronze.py       # Bronze layer CDC processing
-│   │   ├── stream-silver.py       # Silver layer data cleaning
-│   │   ├── stream-gold.py         # Gold layer aggregations
+│   ├── streaming-delta/           # Delta Lake real-time processing (RECOMMENDED)
+│   │   ├── stream-bronze-delta.py # Bronze layer CDC with ACID transactions
+│   │   ├── stream-silver-delta.py # Silver layer with Delta versioning
+│   │   ├── stream-gold-delta.py   # Gold layer SCD Type 4 with history
+│   │   ├── setup_directories.py  # Delta Lake directory setup
+│   │   └── requirements-delta.txt # Delta Lake dependencies
+│   ├── streaming/                 # Legacy Parquet processing
+│   │   ├── stream-bronze.py       # Bronze layer CDC processing (Parquet)
+│   │   ├── stream-silver.py       # Silver layer data cleaning (Parquet)
+│   │   ├── stream-gold.py         # Gold layer aggregations (Parquet)
 │   │   └── jars/                  # Spark dependencies (auto-downloaded)
-│   ├── dw_load.ipynb             # Batch ETL notebook
-│   ├── table_filter.ipynb        # Data filtering utilities
-│   └── parquet_converter.ipynb   # Format conversion tools
+│   ├── batch-delta/               # Delta Lake batch processing
+│   │   ├── table_filter_delta.ipynb    # Delta Lake data filtering
+│   │   └── dw_load_delta.ipynb         # Delta Lake data warehouse ETL
+│   ├── batch/                     # Legacy Parquet batch processing
+│   │   ├── dw_load.ipynb          # Batch ETL notebook (Parquet)
+│   │   ├── table_filter.ipynb     # Data filtering utilities (Parquet)
+│   │   └── parquet_converter.ipynb # Format conversion tools
+│   └── jars/                      # Shared Spark dependencies
 ├── DB_mig/                       # Migration utilities
 │   ├── raw_storage_migration     # Data migration scripts
 │   └── single_table_mig         # Single table migration
@@ -164,7 +190,7 @@ DE_project/
 
 ## JAR Dependencies Setup
 
-The streaming applications require specific JAR files for Azure Storage and Kafka connectivity. These are automatically managed but you may need to download them manually if needed.
+The streaming applications require specific JAR files for Azure Storage, Kafka connectivity, and **Delta Lake support**. These are automatically managed but you may need to download them manually if needed.
 
 ### Required JAR Files
 ```
@@ -180,7 +206,12 @@ scripts/jars/                          # Main JAR directory
 ├── kafka-clients-3.5.0.jar           # Kafka client libraries
 ├── mysql-connector-j-9.3.0.jar       # MySQL JDBC driver
 └── spark-sql-kafka-0-10_2.12-3.5.0.jar # Spark-Kafka integration
+
+streaming-delta/jars/                   # Delta Lake specific JARs
+└── (same JARs as above + Delta dependencies automatically managed)
 ```
+
+**Note**: Delta Lake dependencies (`io.delta:delta-spark_2.12:3.0.0`) are automatically downloaded via Spark packages configuration.
 
 ### Manual JAR Download (if needed)
 If the JARs are not automatically downloaded, you can get them from:
@@ -191,7 +222,8 @@ If the JARs are not automatically downloaded, you can get them from:
 
 Place all JAR files in both:
 - `scripts/jars/` (main location)
-- `scripts/streaming/jars/` (streaming-specific copy)
+- `scripts/streaming/jars/` (Parquet streaming copy)
+- `scripts/streaming-delta/jars/` (Delta Lake streaming copy - optional, uses packages)
 
 **Note**: JAR files are excluded from Git tracking (see `.gitignore`) to keep the repository clean.
 
@@ -217,6 +249,11 @@ docker logs debezium-mysql-connector-debezium-1
 ### Azure Storage
 Use [Azure Storage Explorer](https://azure.microsoft.com/en-us/products/storage/storage-explorer/) to browse your Data Lake output.
 
+**Browse Delta Tables:**
+- Browse to your storage accounts: `mybronze`, `mysilver`, `mygold`
+- Navigate to containers: `bronze-delta`, `silver-delta`, `gold-delta`
+- Delta tables will show as directories with `_delta_log` folders containing transaction logs
+
 ---
 
 ## Configuration
@@ -224,6 +261,16 @@ Use [Azure Storage Explorer](https://azure.microsoft.com/en-us/products/storage/
 ### Azure Storage Credentials
 Update the storage account keys in your streaming scripts:
 
+**Delta Lake Streaming** (Recommended):
+```python
+# In stream-bronze-delta.py, stream-silver-delta.py, stream-gold-delta.py
+spark.conf.set(
+    "fs.azure.account.key.mybronze.dfs.core.windows.net",
+    "YOUR_BRONZE_STORAGE_KEY"
+)
+```
+
+**Legacy Parquet Streaming**:
 ```python
 # In stream-bronze.py, stream-silver.py, stream-gold.py
 spark.conf.set(
@@ -233,8 +280,17 @@ spark.conf.set(
 ```
 
 ### Checkpoint Management
+**Delta Lake Streaming**:
 ```bash
-# Clear checkpoints for fresh start
+# Clear Delta Lake checkpoints for fresh start
+rm -rf /tmp/spark-checkpoints-bronze/cdc_bronze_delta_*
+rm -rf /tmp/spark-checkpoints-silver/cdc_silver_delta_*
+rm -rf /tmp/spark-checkpoints-gold/cdc_scd4_delta_*
+```
+
+**Legacy Parquet Streaming**:
+```bash
+# Clear Parquet checkpoints for fresh start
 rm -rf /tmp/checkpoints/cdc_*
 rm -rf /tmp/checkpoints/*
 ```
@@ -262,15 +318,46 @@ docker compose down && docker compose up -d
 - Ensure Data Lake Gen2 is enabled
 - Check firewall settings
 
+**Delta Lake Issues:**
+- Verify Delta Lake packages are being downloaded: `io.delta:delta-spark_2.12:3.0.0`
+- Check Delta table transaction logs in Azure Storage (`_delta_log` folders)
+- Ensure ACID transaction consistency by checking Delta Lake logs
+
 **Out of Order Processing:**
 - The pipeline now automatically handles chronological ordering
 - Events are sorted by timestamp within each batch
+- **Delta Lake MERGE operations** ensure data consistency even with out-of-order events
 
 ### Debug Mode
 Enable detailed logging in streaming scripts:
 ```python
 spark.sparkContext.setLogLevel("DEBUG")
 ```
+
+---
+
+## Delta Lake Features
+
+### ACID Transactions
+- **Atomicity**: All operations complete successfully or are rolled back
+- **Consistency**: Data integrity maintained across all operations
+- **Isolation**: Concurrent operations don't interfere with each other
+- **Durability**: Committed changes are permanently stored
+
+### Time Travel & Versioning
+```python
+# Read previous versions of Delta tables
+df = spark.read.format("delta").option("versionAsOf", 0).load("path/to/delta/table")
+df = spark.read.format("delta").option("timestampAsOf", "2025-01-01").load("path/to/delta/table")
+```
+
+### Schema Evolution
+Delta Lake automatically handles schema changes without breaking existing pipelines.
+
+### SCD Type 4 Implementation
+- **Current Tables**: Latest version of each dimension record
+- **History Tables**: Complete change tracking with operation types
+- **Change Types**: INSERT, UPDATE, DELETE with timestamps
 
 ---
 
