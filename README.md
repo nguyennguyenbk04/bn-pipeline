@@ -17,6 +17,10 @@ A complete real-time data pipeline that captures MySQL database changes and stre
 
 ## Architecture Overview
 
+![Architecture Diagram](Architecture.png)
+
+The pipeline follows a modern data lake architecture where MySQL database changes are captured via Debezium CDC and streamed through Apache Kafka to Azure Data Lake Storage Gen2. The data flows through three distinct layers: the **Bronze-Delta Layer** stores raw CDC events with ACID transactions and complete audit trails, the **Silver-Delta Layer** contains cleaned and deduplicated operational data with schema evolution support, and the **Gold-Delta Layer** maintains SCD Type 4 dimensions with comprehensive change history and time travel capabilities.
+
 ```
 MySQL Database (OLTP)
     ↓ (Debezium CDC)
@@ -27,11 +31,6 @@ Azure Data Lake Storage Gen2
     ├── Silver-Delta Layer (Cleaned data with versioning)
     └── Gold-Delta Layer (SCD Type 4 dimensions with history)
 ```
-
-**Pipeline Stages:**
-1. **Bronze-Delta Layer**: Raw CDC events with ACID transactions and audit trail
-2. **Silver-Delta Layer**: Cleaned, deduplicated operational data with schema evolution  
-3. **Gold-Delta Layer**: SCD Type 4 dimensions with change history and time travel
 
 ---
 
@@ -60,7 +59,7 @@ Azure Data Lake Storage Gen2
    ```
 
 4. **Azure Data Lake Storage Gen2**
-   - Create storage accounts: `mybronze`, `mysilver`, `mygold`
+   - Create storage accounts: `YOUR_BRONZE_STORAGE_ACCOUNT`, `YOUR_SILVER_STORAGE_ACCOUNT`, `YOUR_GOLD_STORAGE_ACCOUNT`
    - Create containers: `bronze-delta`, `silver-delta`, `gold-delta`
    - Update credentials in streaming scripts
 
@@ -92,7 +91,7 @@ Wait for all services to be healthy (~30 seconds).
 ### 3. Create Sample Database
 ```bash
 # Load the e-commerce schema and sample data
-docker exec -i debezium-mysql-connector-mysql-1 mysql -u root -prootpassword < ../dw_design/online_store.sql
+docker exec -i debezium-mysql-connector-mysql-1 mysql -u root -pYOUR_MYSQL_ROOT_PASSWORD < ../dw_design/online_store.sql
 ```
 
 ### 4. Register Debezium Connector
@@ -130,7 +129,7 @@ python stream-gold.py    # Parquet format
 ### 6. Test the Pipeline
 ```sql
 -- Connect to MySQL and make changes
-docker exec -it debezium-mysql-connector-mysql-1 mysql -u root -prootpassword online_store
+docker exec -it debezium-mysql-connector-mysql-1 mysql -u root -pYOUR_MYSQL_ROOT_PASSWORD online_store
 
 -- Test chronological processing with Delta Lake ACID transactions
 INSERT INTO Customers (Name, Email, PhoneNumber) VALUES ('Test User', 'test@example.com', '555-0123');
@@ -147,8 +146,6 @@ Watch the streaming logs to see:
 ---
 
 ## Project Structure
-
-
 
 ```
 DE_project/
@@ -170,12 +167,11 @@ DE_project/
 │   │   ├── table_filter_delta.ipynb # Delta Lake data filtering
 │   │   ├── dw_load_delta.ipynb      # Delta Lake data warehouse ETL
 │   │   └── csv_to_delta_converter.ipynb # CSV to Delta conversion
-│   ├── jars/                      # Shared Spark dependencies
-├── DB_mig/                        # Migration utilities
-│   ├── raw_storage_migration      # Data migration scripts
-│   └── single_table_mig           # Single table migration
+│   └── jars/                      # Shared Spark dependencies
+└── DB_mig/                        # Migration utilities
+    ├── raw_storage_migration      # Data migration scripts
+    └── single_table_mig           # Single table migration
 ```
-
 
 ## JAR Dependencies Setup
 
@@ -210,6 +206,8 @@ If the JARs are not automatically downloaded, you can get them from:
 3. **Azure Storage**: https://github.com/Azure/azure-storage-java
 
 Place all JAR files in both:
+- `scripts/jars/` (shared directory)
+- `scripts/streaming-delta/jars/` (Delta Lake specific)
 - `scripts/jars/` (main location)
 - `scripts/streaming/jars/` (Parquet streaming copy)
 - `scripts/streaming-delta/jars/` (Delta Lake streaming copy - optional, uses packages)
@@ -219,6 +217,8 @@ Place all JAR files in both:
 ---
 
 ## Monitoring & Management
+
+## Monitoring and Management
 
 ### Service Health Check
 ```bash
@@ -231,19 +231,17 @@ docker logs debezium-mysql-connector-debezium-1
 ```
 
 ### Kafka Management
-- **Kafka UI**: http://localhost:8081
-- **Debezium Connect API**: http://localhost:8083
-- **Connector Status**: http://localhost:8083/connectors
+- **Kafka UI**: http://YOUR_KAFKA_UI_HOST:8081
+- **Debezium Connect API**: http://YOUR_DEBEZIUM_HOST:8083
+- **Connector Status**: http://YOUR_DEBEZIUM_HOST:8083/connectors
 
 ### Azure Storage
 Use [Azure Storage Explorer](https://azure.microsoft.com/en-us/products/storage/storage-explorer/) to browse your Data Lake output.
 
 **Browse Delta Tables:**
-- Browse to your storage accounts: `mybronze`, `mysilver`, `mygold`
+- Browse to your storage accounts: `YOUR_BRONZE_STORAGE_ACCOUNT`, `YOUR_SILVER_STORAGE_ACCOUNT`, `YOUR_GOLD_STORAGE_ACCOUNT`
 - Navigate to containers: `bronze-delta`, `silver-delta`, `gold-delta`
 - Delta tables will show as directories with `_delta_log` folders containing transaction logs
-
----
 
 ## Configuration
 
@@ -254,7 +252,7 @@ Update the storage account keys in your streaming scripts:
 ```python
 # In stream-bronze-delta.py, stream-silver-delta.py, stream-gold-delta.py
 spark.conf.set(
-    "fs.azure.account.key.mybronze.dfs.core.windows.net",
+    "fs.azure.account.key.YOUR_BRONZE_STORAGE_ACCOUNT.dfs.core.windows.net",
     "YOUR_BRONZE_STORAGE_KEY"
 )
 ```
@@ -263,7 +261,7 @@ spark.conf.set(
 ```python
 # In stream-bronze.py, stream-silver.py, stream-gold.py
 spark.conf.set(
-    "fs.azure.account.key.mybronze.dfs.core.windows.net",
+    "fs.azure.account.key.YOUR_BRONZE_STORAGE_ACCOUNT.dfs.core.windows.net",
     "YOUR_BRONZE_STORAGE_KEY"
 )
 ```
@@ -284,8 +282,6 @@ rm -rf /tmp/checkpoints/cdc_*
 rm -rf /tmp/checkpoints/*
 ```
 
----
-
 ## Troubleshooting
 
 ### Common Issues
@@ -300,7 +296,7 @@ docker compose down && docker compose up -d
 
 **Kafka Connectivity:**
 - Check if Kafka is accessible on port 9093
-- Verify Debezium connector is registered: `curl http://localhost:8083/connectors`
+- Verify Debezium connector is registered: `curl http://YOUR_DEBEZIUM_HOST:8083/connectors`
 
 **Azure Storage Issues:**
 - Verify storage account keys are correct
@@ -327,26 +323,19 @@ spark.sparkContext.setLogLevel("DEBUG")
 
 ## Delta Lake Features
 
-### ACID Transactions
-- **Atomicity**: All operations complete successfully or are rolled back
-- **Consistency**: Data integrity maintained across all operations
-- **Isolation**: Concurrent operations don't interfere with each other
-- **Durability**: Committed changes are permanently stored
+Delta Lake provides enterprise-grade ACID transactions ensuring that all operations either complete successfully or are rolled back entirely, maintaining data consistency across all operations while preventing concurrent operations from interfering with each other. Once committed, changes are permanently stored with full durability guarantees.
 
-### Time Travel & Versioning
+The platform supports comprehensive time travel and versioning capabilities, allowing you to read previous versions of Delta tables using version numbers or timestamps. This enables historical analysis, data recovery, and compliance auditing without maintaining separate backup systems.
+
 ```python
 # Read previous versions of Delta tables
 df = spark.read.format("delta").option("versionAsOf", 0).load("path/to/delta/table")
 df = spark.read.format("delta").option("timestampAsOf", "2025-01-01").load("path/to/delta/table")
 ```
 
-### Schema Evolution
-Delta Lake automatically handles schema changes without breaking existing pipelines.
+Schema evolution happens automatically, allowing Delta Lake to handle schema changes without breaking existing pipelines. The system gracefully accommodates new columns, data type changes, and structural modifications while maintaining backward compatibility.
 
-### SCD Type 4 Implementation
-- **Current Tables**: Latest version of each dimension record
-- **History Tables**: Complete change tracking with operation types
-- **Change Types**: INSERT, UPDATE, DELETE with timestamps
+The SCD Type 4 implementation maintains both current tables with the latest version of each dimension record and comprehensive history tables with complete change tracking including operation types. All change types (INSERT, UPDATE, DELETE) are captured with precise timestamps for full audit trail capabilities.
 
 ---
 
@@ -361,15 +350,9 @@ The project includes a complete e-commerce database with:
 - **Payments**: Payment processing records
 - **Reasons**: Return and refund tracking
 
----
-
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test with the provided e-commerce schema
-5. Submit a pull request
+Contributing to this project follows a standard workflow: fork the repository, create a feature branch for your changes, implement and test your modifications using the provided e-commerce schema, and submit a pull request for review. We encourage testing against the complete dataset to ensure your changes work across all pipeline layers and data processing scenarios.
 
 ---
 

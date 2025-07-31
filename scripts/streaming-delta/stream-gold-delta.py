@@ -184,7 +184,7 @@ def read_from_kafka(spark, kafka_topic, stream_type="gold-delta"):
     """
     return (spark.readStream
             .format("kafka")
-            .option("kafka.bootstrap.servers", "localhost:9093") # Spark local, if Spark in container use kafka:9093
+            .option("kafka.bootstrap.servers", "YOUR_KAFKA_HOST:9093") # Spark local, if Spark in container use kafka:9093
             .option("subscribe", kafka_topic)
             .option("startingOffsets", "latest")  # Only process NEW messages after starting
             .option("failOnDataLoss", "false")  # Don't fail if some data is lost

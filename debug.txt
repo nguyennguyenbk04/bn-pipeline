@@ -19,7 +19,24 @@ docker cp ./config/connector.json debezium-mysql-connector-debezium-1:/connector
 ```
 Register the connector:
 ```bash
-docker exec -it debezium-mysql-connector-debezium-1 curl -X POST -H "Content-Type: application/json" --data @/connector.json http://localhost:8083/connectors
+```bash
+docker exec -it debezium-mysql-connector-debezium-1 curl -X POST -H "Content-Type: application/json" --data @/connector.json http://YOUR_DEBEZIUM_HOST:8083/connectors
+```
+
+Restart the connector if needed:
+```bash
+docker exec -it debezium-mysql-connector-debezium-1 curl -X POST http://YOUR_DEBEZIUM_HOST:8083/connectors/mysql-connector/restart
+```
+
+Delete the connector:
+```bash
+docker exec -it debezium-mysql-connector-debezium-1 curl -X DELETE http://YOUR_DEBEZIUM_HOST:8083/connectors/mysql-connector
+```
+
+Check connector status:
+```bash
+docker exec -it debezium-mysql-connector-debezium-1 curl http://YOUR_DEBEZIUM_HOST:8083/connectors/mysql-connector/status
+```
 ```
 
 ## Restart the Connector (if needed)
@@ -44,7 +61,7 @@ To see changes for tables, use these commands (one per table):
 docker exec -it debezium-mysql-connector-kafka-1 kafka-console-consumer --bootstrap-server kafka:9092 --topic online_store.online_store.Customers
 ```
 
-Or use **Kafka UI** at [http://localhost:8081](http://localhost:8081) to browse all topics
+Or use **Kafka UI** at [http://YOUR_KAFKA_UI_HOST:8081](http://YOUR_KAFKA_UI_HOST:8081) to browse all topics
 ---
 
 ## 6. 
@@ -100,13 +117,13 @@ If fail: rm -rf /tmp/checkpoints/{Table_name}
 1. Start the streaming application
 2. Insert test data in MySQL:
    ```bash
-   docker exec -it mysql mysql -u root -ppassword online_store -e "INSERT INTO Customers (CustomerID, Name, Email, PhoneNumber) VALUES (10000006, 'Test User', 'test@example.com', '1234567890');"
+   docker exec -it mysql mysql -u root -pYOUR_MYSQL_ROOT_PASSWORD online_store -e "INSERT INTO Customers (CustomerID, Name, Email, PhoneNumber) VALUES (10000006, 'Test User', 'test@example.com', '1234567890');"
    ```
 3. Check streaming logs for data processing
 4. Verify data in Azure storage or use the `table_filter.ipynb` notebook to read from bronze layer
 
 ### Configuration Notes
-- **Kafka Connection:** Uses `localhost:9093` (external listener)
+- **Kafka Connection:** Uses `YOUR_KAFKA_HOST:9093` (external listener)
 - **Azure Storage:** Configured for ADLS Gen2 with abfss protocol
 - **Checkpoints:** Stored in `/tmp/checkpoints/` directory
 - **Processing:** Real-time with 10-second micro-batches

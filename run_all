@@ -1,10 +1,10 @@
 #!/bin/bash
 
-bash /home/bnguyen/Desktop/DE_project/DB_mig/raw_storage_migration
+bash /path/to/your/DB_mig/raw_storage_migration
 
-jupyter nbconvert --to notebook --execute --inplace /home/bnguyen/Desktop/DE_project/notebooks/parquet_converter.ipynb
-jupyter nbconvert --to notebook --execute --inplace /home/bnguyen/Desktop/DE_project/notebooks/table_filter.ipynb
-jupyter nbconvert --to notebook --execute --inplace /home/bnguyen/Desktop/DE_project/notebooks/dw_load.ipynb
+jupyter nbconvert --to notebook --execute --inplace /path/to/your/notebooks/parquet_converter.ipynb
+jupyter nbconvert --to notebook --execute --inplace /path/to/your/notebooks/table_filter.ipynb
+jupyter nbconvert --to notebook --execute --inplace /path/to/your/notebooks/dw_load.ipynb
 
 # chmod +x <link>
 # ./run_all

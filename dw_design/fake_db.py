@@ -22,9 +22,9 @@ INVENTORY_REGIONS = ['North America', 'Europe', 'Asia', 'South America', 'Africa
 # Database connection
 def get_db_connection():
     return mysql.connector.connect(
-        host='127.0.0.1',
-        user='bnguyen',
-        password='.Tldccmcbtldck2',
+        host='YOUR_MYSQL_HOST',
+        user='YOUR_MYSQL_USERNAME',
+        password='YOUR_MYSQL_PASSWORD',
         database='online_store'
     )
 

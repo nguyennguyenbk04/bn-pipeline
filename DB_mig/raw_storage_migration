@@ -1,10 +1,10 @@
 # bash script to automate upload#!/bin/bash
 
-DB_NAME="online_store"
-MYSQL_USER="bnguyen"
-MYSQL_HOST="127.0.0.1"
-STORAGE_ACCOUNT="kho"
-CONTAINER_NAME="online-store"
+DB_NAME="YOUR_DATABASE_NAME"
+MYSQL_USER="YOUR_MYSQL_USERNAME"
+MYSQL_HOST="YOUR_MYSQL_HOST"
+STORAGE_ACCOUNT="YOUR_STORAGE_ACCOUNT"
+CONTAINER_NAME="YOUR_CONTAINER_NAME"
 
 # Prompt for MySQL password once
 read -s -p "Enter MySQL Password: " MYSQL_PWD

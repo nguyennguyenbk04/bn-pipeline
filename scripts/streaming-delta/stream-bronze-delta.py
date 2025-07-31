@@ -270,7 +270,7 @@ def read_from_kafka(spark, kafka_topic, stream_type="default"):
     """
     return (spark.readStream
             .format("kafka")
-            .option("kafka.bootstrap.servers", "localhost:9093")
+            .option("kafka.bootstrap.servers", "YOUR_KAFKA_HOST:9093")
             .option("subscribe", kafka_topic)
             .option("startingOffsets", "latest")
             .option("failOnDataLoss", "false")
@@ -550,22 +550,22 @@ def check_existing_delta_tables(spark, storage_account_bronze, bronze_delta, tab
             delta_table = DeltaTable.forPath(spark, delta_path)
             record_count = delta_table.toDF().count()
             existing_tables[table_name] = record_count
-            print(f"✅ {table_name}: {record_count} records")
+            print(f"{table_name}: {record_count} records")
         except Exception as e:
             existing_tables[table_name] = 0
-            print(f"❌ {table_name}: Table does not exist")
+            print(f"{table_name}: Table does not exist")
     
     total_records = sum(existing_tables.values())
     print("-" * 60)
     print(f"TOTAL EXISTING RECORDS: {total_records}")
     
     if total_records > 0:
-        print("\n⚠️  WARNING: You have existing data in Delta tables!")
+        print("\nWARNING: You have existing data in Delta tables!")
         print("If RECREATE_DELTA_TABLES=True, ALL this data will be DELETED!")
         print("This likely includes your initial batch-loaded data.")
         print("Set RECREATE_DELTA_TABLES=False to preserve existing data.")
     else:
-        print("\n✅ No existing data found - safe to recreate tables")
+        print("\nNo existing data found - safe to recreate tables")
         
     print("="*60 + "\n")
     return existing_tables
@@ -622,7 +622,7 @@ def main():
         # Additional safety check
         total_existing = sum(existing_data.values())
         if RECREATE_DELTA_TABLES and total_existing > 0:
-            print(f"\n🚨 DANGER: RECREATE_DELTA_TABLES=True will delete {total_existing} existing records!")
+            print(f"\nDANGER: RECREATE_DELTA_TABLES=True will delete {total_existing} existing records!")
             print("This will permanently destroy your initial batch data!")
             print("To cancel: Press Ctrl+C now")
             print("To preserve data: Set RECREATE_DELTA_TABLES=False in the code")
