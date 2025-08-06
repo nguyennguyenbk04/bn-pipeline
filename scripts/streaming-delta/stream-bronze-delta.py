@@ -42,7 +42,7 @@ def create_spark_session():
             .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
             .config("spark.hadoop.fs.azure", "org.apache.hadoop.fs.azure.NativeAzureFileSystem")
             .config("spark.hadoop.fs.azure.account.key.mybronze.dfs.core.windows.net",
-                   "c5etqTidViezB/4ukOAALy23HeMBsJJ8g+2nFaIdbC7E9PhLw0y2YIA1ItjutpqS1/8Ga8fw40mR+ASt2T+/sw==")
+                   "YOUR_BRONZE_STORAGE_ACCOUNT_KEY")  # Replace with your actual key
             .config("spark.sql.streaming.checkpointLocation", checkpoint_dir)
             .config("spark.sql.streaming.minBatchesToRetain", "10")
             .config("spark.sql.streaming.pollingDelay", "1s")
@@ -582,7 +582,7 @@ def main():
         # Set Azure credentials
         spark.conf.set(
             "fs.azure.account.key.mybronze.dfs.core.windows.net",
-            "c5etqTidViezB/4ukOAALy23HeMBsJJ8g+2nFaIdbC7E9PhLw0y2YIA1ItjutpqS1/8Ga8fw40mR+ASt2T+/sw=="
+            "YOUR_BRONZE_STORAGE_ACCOUNT_KEY"  # Replace with your actual key
         )
         
         # OPTION: Set to True if you want to clear checkpoints and start fresh
